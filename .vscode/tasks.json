@@ -1,0 +1,78 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "C/C++: gcc.exe 生成活动文件",
+            "command": "C:\\Program Files\\mingw-w64\\x86_64-8.1.0-posix-seh-rt_v6-rev0\\mingw64\\bin\\gcc.exe",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\HAN_Lib\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\Lib\\zlib-1.3.1\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\ConsoleCmd\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\FileConversion\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\HexView\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\BinView\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\SrecView\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\AscView\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\ComTool\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\ComTool\\ComToolModule\\GlobalVariables\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\ComTool\\ComToolModule\\Console\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\ComTool\\ComToolModule\\Graphic\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\EthernetTool\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\EthernetTool\\EthernetToolModule\\GlobalVariables\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\EthernetTool\\EthernetToolModule\\Console\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\EthernetTool\\EthernetToolModule\\Http\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\EthernetTool\\EthernetToolModule\\SomeIP\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\ICCProfile\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\EditTool\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Icon\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\BitMap\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Png\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\GlobalVariables\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\MCUView\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\IFD\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\IPTC\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\MakerNote\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\MakerNote\\Sony\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP0\\JFIF\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP1\\Exif\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP1\\XMP\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP2\\MPF\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP2\\ICCProfile\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP13\\Photoshop\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP14\\Adobe\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Video\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Video\\VideoModule\\MP4\\*.c",
+                "-lgdi32",
+                "-lcomdlg32",
+                "-lcomctl32",
+                "-lshlwapi",
+                "-lwsock32",
+                "-liphlpapi",
+                "-lwinhttp",
+                "-lws2_32",
+                "-Wall",
+                "-Wextra",
+                "-o",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox.exe"
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "调试器生成的任务。"
+        }
+    ],
+    "version": "2.0.0"
+}

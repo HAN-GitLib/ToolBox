@@ -1,0 +1,329 @@
+#ifndef HAN_PICTURE_JPEG_SEGMENT_H
+#define HAN_PICTURE_JPEG_SEGMENT_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "..\..\HAN_PictureDef.h"
+
+#define PICTURE_JPEG_SEGMENT_INFO_LIST_ITEM_MAX         256
+
+#define PICTURE_JPEG_SEGMENT_SAMPLING_FACTOR_MAX        4   // JPEG 规范明确采样系数只能 1 - 4，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.2 的 Table B.2 中关于 Hi、Vi 的描述
+#define PICTURE_JPEG_SEGMENT_QT_MAX                     4   // JPEG 规范明确量化表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.1 的 Table B.4 中关于 Tq 的描述
+#define PICTURE_JPEG_SEGMENT_HT_MAX                     4   // JPEG 规范明确 Huffman 表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.2 的 Table B.5 中关于 Th 的描述
+#define PICTURE_JPEG_SEGMENT_MCU_BLOCK_MAX              10  // JPEG 规范明确单个 MCU 内块数最多 10 个，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.3 中对 Csj 的描述
+#define PICTURE_JPEG_SEGMENT_COMPONENT_MAX              10  // 分量数最大值，虽然规范说是可以 1 - 255，但考虑到 MCU 内最多 10 个块的规定，且 4 个以上分量实在用不到，所以这里取 10
+
+typedef enum {
+    PICTURE_JPEG_TYPE_UNKNOWN,
+    PICTURE_JPEG_TYPE_BASELINE,
+    PICTURE_JPEG_TYPE_PROGRESSIVE,
+} PICTUREJPEGTYPE;
+typedef enum {
+    PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_DC,
+    PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_AC,
+    PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_CNT,
+} PICTUREJPEGSEGMENTDHTTABLETYPE;
+
+typedef enum {
+    PICTURE_JPEG_DEFAULT_SEGMENT_FIELD_LEN,
+    PICTURE_JPEG_DEFAULT_SEGMENT_FIELD_DATA,
+    PICTURE_JPEG_DEFAULT_SEGMENT_FIELD_EXLEN,
+    PICTURE_JPEG_DEFAULT_SEGMENT_FIELD_EXDATA,
+    PICTURE_JPEG_DEFAULT_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_DEFAULT;
+typedef enum {
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_VERSION,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_DENSITY_UNIT,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_X_DENSITY,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_Y_DENSITY,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_THUMB_X_PIXEL,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_THUMB_Y_PIXEL,
+    PICTURE_JPEG_APP0_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_APP0;
+typedef enum {
+    /* Exif */
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_INTEROPERABILITY_INDEX,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_INTEROPERABILITY_VERSION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_IMAGE_WIDTH,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_IMAGE_HEIGHT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_BITS_PER_SAMPLE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_COMPRESSION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_PHOTOMETRIC_INTERPRETATION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_IMAGE_DESCRIPTION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CAMERA_MAKE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CAMERA_MODEL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_ORIENTATION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SAMPLES_PER_PIXEL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_RESOLUTION_H,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_RESOLUTION_V,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_RESOLUTION_UNIT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SOFTWARE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_DATETIME,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_WHITE_POINT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_PRIMARY_CHROMATICITIES,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_THUMB_POS,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_THUMB_SIZE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_YCBCR_POSITION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_RELATED_IMAGE_WIDTH,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_RELATED_IMAGE_HEIGHT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_YCBCR_COEFFICIENTS,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_COPY_RIGHT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_EXPOSURE_TIME,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_F_NUMBER,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_EXPOSURE_PROGRAM,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_ISO_SPEED,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SENSITIVITY_TYPE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_REI,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_EXIF_VERSION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_DATETIME_ORI,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_DATETIME_DIGIT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_COMPONENT_CONFIGURATION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_COMPRESSED_BITS_PER_PIXEL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SHUTTER_SPEED_VALUE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_APERTURE_VALUE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_BRIGHTNESS,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_EXPOSURE_BIAS,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_MAX_APERTURE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_METERING_MODE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_LIGHT_SOURCE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_FIRED,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_RETURN,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_MODE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_FUNCTION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_RED_EYE_MODE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FOCAL_LENGTH,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_USER_COMMENT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SUB_SEC_TIME,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SUB_SEC_TIME_ORI,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SUB_SEC_TIME_DIGIT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FLASH_PIX_VERSION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_COLOR_SPACE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_WIDTH,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_HEIGHT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SENSING_METHOD,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FOCAL_PLANE_X_RESOLUTION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FOCAL_PLANE_Y_RESOLUTION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FOCAL_PLANE_RESOLUTION_UNIT,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FILE_SOURCE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SCENE_TYPE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CFA_PATTERN,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CUSTOM_RENDERED,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_EXPOSURE_MODE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_WHITE_BALANCE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_DIGITAL_ZOOM_RATIO,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_FOCAL_LENGTH_IN_35MM_FILM,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SCENE_CAPTURE_TYPE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_GAIN_CONTROL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CONTRAST,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SATURATION,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SHARPNESS,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_SUBJECT_DISTANCE_RANGE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_LENS_INFO,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_MIN_FOCAL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_MAX_FOCAL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_MIN_FOCAL_MAX_APERTURE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_MAX_FOCAL_MAX_APERTURE,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_LENS_MODEL,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_GAMMA,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_PRINT_IM,
+    /* GPS */
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_GPS_VERSION_ID,
+    PICTURE_JPEG_APP1_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_APP1;
+typedef enum {
+    /* MPF */
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_VERSION,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_NUMBER_OF_IMAGES,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_FLAGS,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_FORMAT,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_TYPE,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_LENGTH,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_START,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_DEPENDENT_IMAGE1_ENTRY_NUMBER,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_MPF_MP_IMAGE_DEPENDENT_IMAGE2_ENTRY_NUMBER,
+    PICTURE_JPEG_APP2_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_APP2;
+typedef enum {
+    PICTURE_JPEG_COM_SEGMENT_FIELD_COMMENT,
+    PICTURE_JPEG_COM_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_COM;
+typedef enum {
+    PICTURE_JPEG_SOFn_SEGMENT_FIELD_BIT_DEPTH,
+    PICTURE_JPEG_SOFn_SEGMENT_FIELD_HEIGHT,
+    PICTURE_JPEG_SOFn_SEGMENT_FIELD_WIDTH,
+    PICTURE_JPEG_SOFn_SEGMENT_FIELD_COMPONENT_NUM,
+    PICTURE_JPEG_SOFn_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_SOFn;
+typedef enum {
+    PICTURE_JPEG_DRI_SEGMENT_FIELD_RESTART_INTERVAL,
+    PICTURE_JPEG_DRI_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_DRI;
+typedef enum {
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_COMPONENT_NUM,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_COMPONENT_Y,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_COMPONENT_Cb,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_COMPONENT_Cr,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_SPECTRAL_START,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_SPECTRAL_END,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_PROGRESSIVE,
+    PICTURE_JPEG_SOS_SEGMENT_FIELD_CNT,
+} PICTUREJPEGSEGMENTFIELD_SOS;
+
+typedef struct tagPICTUREJPEGSEGMENT {
+    uint16_t        cMarker;
+    uint16_t        nLength;        // 数据段长度，不含长度本身
+    HANSIZE         nExLength;
+    HANSIZE         nPos;
+    const uint8_t*  pData;
+    const uint8_t*  pExData;
+    const uint8_t*  pSegment;
+} PICTUREJPEGSEGMENT, * PPICTUREJPEGSEGMENT;
+typedef const PICTUREJPEGSEGMENT* PCPICTUREJPEGSEGMENT;
+
+/* 量化表 */
+typedef uint16_t                    PICTUREJPEGQUANTTABLE[8][8];  // 整型量化表
+/* Huffman 码表 */
+typedef struct tagPICTUREJPEGSEGMENTDHTINFO {
+    uint8_t                         pOffset[16];    // 每个码长对应的偏移量，[0]: 第一个码长为 1 的 Huffman 码的位置，[1]: 第一个码长为 2 的 Huffman 码的位置……
+    uint8_t                         pCnt[16];       // 每个码长的个数，[0]: 码长为 1 的 Huffman 码的个数，[1]: 码长为 2 的 Huffman 码的个数……
+    uint8_t                         pValue[256];    // 每个Huffman码对应的值（原始码字）
+    uint16_t                        pCode[256];     // Huffman 码。解码时，该成员与 pValue 成员一一对应。编码时，该成员就是序号对应的 Huffman 码
+    uint8_t                         pLen[256];      // pCode 成员中每个码字的长度
+} PICTUREJPEGSEGMENTDHTINFO, * PPICTUREJPEGSEGMENTDHTINFO;
+typedef const PICTUREJPEGSEGMENTDHTINFO* PCPICTUREJPEGSEGMENTDHTINFO;
+
+typedef struct tagPICTUREJPEGSEGMENTINFO {
+    PICTUREJPEGTYPE                 eType;
+    struct {
+        BOOL                        bValid;
+        uint8_t                     nQTCnt;
+        PICTUREJPEGQUANTTABLE       pQT[PICTURE_JPEG_SEGMENT_QT_MAX];
+    } DQT;
+    struct {
+        BOOL                        bValid;
+        PICTUREJPEGSEGMENTDHTINFO   pHT[PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_CNT][PICTURE_JPEG_SEGMENT_HT_MAX];  // [0]: DC 表，[1]：AC 表
+    } DHT;
+    struct {
+        BOOL                        bValid;
+        BOOL                        bStdComponent;
+        PICTURERESOLUTION           pxResolution;                                                   // 图像分辨率
+        uint8_t                     nBitDepth;                                                      // 图像位深
+        uint8_t                     nComponentCnt;                                                  // 分量数
+        uint8_t                     pSamplingCoe[PICTURE_JPEG_SEGMENT_COMPONENT_MAX][2];            // 各分量的采样系数，[0]: 横向，[1]：纵向
+        uint8_t                     pQuantTblId[PICTURE_JPEG_SEGMENT_COMPONENT_MAX];                // 各分量所使用的量化表 ID
+        PICTURERESOLUTION           pxMCUBlockCnt;                                                  // MCU 的横向和纵向 block 块数
+        PICTURERESOLUTION           pxMCUSize;                                                      // MCU 像素大小
+        PICTURERESOLUTION           pxMCUCnt;                                                       // 横向和纵向的总 MCU 个数（pxResolution / pxMCUSize）
+        uint8_t                     pMCUComponentBlockCnt[PICTURE_JPEG_SEGMENT_COMPONENT_MAX];      // 每个 MCU 内各分量的块数
+        uint8_t                     nMCUComponentBlockTotal;                                        // MCU 内所有分量总块数
+        uint8_t                     pMCUComponentBlockOffset[PICTURE_JPEG_SEGMENT_COMPONENT_MAX];   // MCU 内各分量首个块的偏移量
+        uint8_t                     pBlockComponentId[PICTURE_JPEG_SEGMENT_MCU_BLOCK_MAX];          // 每个 MCU 内各 block 对应的分量 ID
+        HANSIZE                     nBlockTotal;                                                    // 总块数
+    } SOFn;
+    struct {
+        BOOL                        bValid;
+        uint8_t                     nComponentCnt;
+        BOOL                        pComponentValid[PICTURE_JPEG_SEGMENT_COMPONENT_MAX];
+        uint8_t                     pComponentTableId[PICTURE_JPEG_SEGMENT_COMPONENT_MAX][2];
+        uint8_t                     nSpectralStart;
+        uint8_t                     nSpectralEnd;
+        uint8_t                     nAh;
+        uint8_t                     nAl;
+        uint16_t                    nLen;
+        const uint8_t*              pData;
+        HANSIZE                     nExLen;
+        const uint8_t*              pExData;
+        HANSIZE                     nCodeLen;
+        HANSIZE                     pSOSTotal[PICTURE_JPEG_SEGMENT_COMPONENT_MAX];                  // 各分量拥有的 SOS 数据段的个数
+    } SOS;
+    struct {
+        struct {
+            struct {
+                HANPCSTR            pCameraModel;
+            } IFD0;
+        } Exif;
+    } APP1;
+} PICTUREJPEGSEGMENTINFO, * PPICTUREJPEGSEGMENTINFO;
+typedef const PICTUREJPEGSEGMENTINFO* PCPICTUREJPEGSEGMENTINFO;
+
+HANPSTR GetJpeg_Default_Name(void);
+HANPSTR GetJpeg_Default_FieldName(PICTUREJPEGSEGMENTFIELD_DEFAULT eName);
+
+HANPSTR GetJpeg_SOI_Name(void);
+
+HANPSTR GetJpeg_APP0_Name(void);
+HANPSTR GetJpeg_APP0_FieldName(PICTUREJPEGSEGMENTFIELD_APP0 eName);
+HANPSTR GetJpeg_APP0_DensityUnitName(uint8_t cUnit);
+
+HANPSTR GetJpeg_APP1_Name(void);
+HANPSTR GetJpeg_APP1_FieldName(PICTUREJPEGSEGMENTFIELD_APP1 eName);
+HANPSTR GetJpeg_APP1_FieldNameByExifName(PCCH pExifName);
+HANPSTR GetJpeg_APP1_FieldNameByTIFFName(PCCH pTIFFName);
+HANPSTR GetJpeg_APP1_CompressionName(uint16_t cCompression);
+HANPSTR GetJpeg_APP1_PhotometricInterpretationName(uint16_t cPI);
+HANPSTR GetJpeg_APP1_OrientationName(uint16_t cOrientation);
+HANPSTR GetJpeg_APP1_ResolutionUnitName(uint16_t cUnit);
+HANPSTR GetJpeg_APP1_YCbCrositionName(uint16_t cPosition);
+HANPSTR GetJpeg_APP1_ExposureProgramName(uint16_t cExposureProgram);
+HANPSTR GetJpeg_APP1_SensitivityTypeName(uint16_t cType);
+HANPSTR GetJpeg_APP1_ComponentConfigurationName(uint16_t cColor);
+HANPSTR GetJpeg_APP1_MeteringModeName(uint16_t cMeteringMode);
+HANPSTR GetJpeg_APP1_LightSourceName(uint16_t cLightSource);
+HANPSTR GetJpeg_APP1_FlashFiredName(uint16_t cFlash);
+HANPSTR GetJpeg_APP1_FlashReturnName(uint16_t cFlash);
+HANPSTR GetJpeg_APP1_FlashModeName(uint16_t cFlash);
+HANPSTR GetJpeg_APP1_FlashFunctionName(uint16_t cFlash);
+HANPSTR GetJpeg_APP1_FlashRedEyeModeName(uint16_t cFlash);
+HANPSTR GetJpeg_APP1_FlashPixVersionName(const uint8_t* pVersion);
+HANPSTR GetJpeg_APP1_ColorSpaceName(uint16_t cColorSpace);
+HANPSTR GetJpeg_APP1_FocalPlaneResolutionUnitName(uint16_t cUnit);
+HANPSTR GetJpeg_APP1_SensingMethodName(uint16_t cSensingMethod);
+HANPSTR GetJpeg_APP1_FileSourceName(uint16_t cSource);
+HANPSTR GetJpeg_APP1_SceneTypeName(uint16_t cSource);
+HANPSTR GetJpeg_APP1_CFAPatternName(uint8_t cCFA);
+HANPSTR GetJpeg_APP1_CustonRenderedName(uint16_t cRender);
+HANPSTR GetJpeg_APP1_ExposureModeName(uint16_t cMode);
+HANPSTR GetJpeg_APP1_WhiteBalanceName(uint16_t cWhiteBalance);
+HANPSTR GetJpeg_APP1_SceneCaptureTypeName(uint16_t cType);
+HANPSTR GetJpeg_APP1_GainControlName(uint16_t cGain);
+HANPSTR GetJpeg_APP1_ContrastName(uint16_t cContrast);
+HANPSTR GetJpeg_APP1_SaturationName(uint16_t cSaturation);
+HANPSTR GetJpeg_APP1_SharpnessName(uint16_t cSharpness);
+HANPSTR GetJpeg_APP1_SubjectDistanceRangeName(uint16_t cDis);
+
+HANPSTR GetJpeg_APP2_Name(void);
+HANPSTR GetJpeg_APP2_FieldName(PICTUREJPEGSEGMENTFIELD_APP2 eName);
+void GetJpeg_APP2_MPImageFlagsName(uint32_t cMask, HANPSTR pText);
+HANPSTR GetJpeg_APP2_MPImageFormatName(uint32_t cMask);
+HANPSTR GetJpeg_APP2_MPImageTypeName(uint32_t cMask);
+
+HANPSTR GetJpeg_COM_Name(void);
+HANPSTR GetJpeg_COM_FieldName(PICTUREJPEGSEGMENTFIELD_COM eName);
+
+HANPSTR GetJpeg_DQT_Name(void);
+
+HANPSTR GetJpeg_DHT_Name(void);
+
+HANPSTR GetJpeg_SOFn_Name(uint16_t cMarker);
+HANPSTR GetJpeg_SOFn_FieldName(PICTUREJPEGSEGMENTFIELD_SOFn eName);
+void GetJpeg_SOFn_ComponentName(uint32_t cComponent, HANPSTR pText);
+HANPSTR GetJpeg_SOFn_ComponentSamplingFactorName(void);
+HANPSTR GetJpeg_SOFn_ComponentQuantitativeTableIdName(void);
+
+HANPSTR GetJpeg_DRI_Name(void);
+HANPSTR GetJpeg_DRI_FieldName(PICTUREJPEGSEGMENTFIELD_DRI eName);
+
+HANPSTR GetJpeg_SOS_Name(void);
+HANPSTR GetJpeg_SOS_FieldName(PICTUREJPEGSEGMENTFIELD_SOS eName);
+
+HANPSTR GetJpeg_RSTn_Name(void);
+
+HANPSTR GetJpeg_EOI_Name(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

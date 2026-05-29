@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "windows.h": "c",
+        "han_fileconversiontypedef.h": "c",
+        "tchar.h": "c",
+        "shlwapi.h": "c",
+        "commctrl.h": "c",
+        "dlldemodef.h": "c",
+        "*.rh": "c",
+        "stdbool.h": "c"
+    }
+}
