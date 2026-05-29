@@ -72,6 +72,7 @@ static LRESULT CALLBACK PictureEditToolWndProc(HWND hPictureEditTool, UINT messa
         } break;
         case WM_SIZE: {
             SizeCallback(hPictureEditTool, etInfo);
+            lWndProcRet = DefWindowProc(hPictureEditTool, message, wParam, lParam);
         } break;
         case WM_CTLCOLORSTATIC: {
             lWndProcRet = (INT_PTR)GetStockObject(WHITE_BRUSH);
