@@ -39,6 +39,7 @@ typedef enum {
     PETM_NOTUSED = PCTM_MODELBASE,      // 不使用的消息值，自定义消息请在下方添加
     PETM_SETPAINTID,                    // 设置需要绘制的图片 ID（WPARAM：从 0 开始的图片 ID，LPARAM：未使用，return：是否成功）
     PETM_GETPAINTID,                    // 获取当前激活的图片 ID（WPARAM：未使用，LPARAM：未使用，return：从 0 开始的图片 ID）
+    PETM_SETPIXELINFO,                  // 更新状态栏的像素信息 ID（WPARAM：PPOINT 类型的像素坐标，LPARAM：PCPICTURERGBA 类型的颜色，return：未使用）
 } PICTUREEDITTOOLMESSAGE;
 
 typedef enum {

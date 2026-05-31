@@ -36,6 +36,13 @@ typedef enum {
     PICTURE_PNG_CHUNK_INFO_HEADER_CNT,
 } PICTUREPNGCHUNKINFOHEADER;
 
+typedef enum {
+    PICTURE_PNG_PICTURE_INFO_MAIN,
+    PICTURE_PNG_PICTURE_INFO_SIZE,
+    PICTURE_PNG_PICTURE_INFO_PIXEL,
+    PICTURE_PNG_PICTURE_INFO_CNT,
+} PICTUREPNGPICTUREINFO;
+
 typedef struct tagPICTUREPNGCHUNKHEADERINFO {
     HANPCSTR                        pName;
     HANINT                          nWidth;
@@ -63,6 +70,7 @@ typedef struct tagPICTUREPNGWNDEXTRA {
     HWND                            hSelf;
     HWND                            hShow;
     HWND                            hEditTool;
+    HWND                            hPictureInfo;
     PICTURECREATEPARAM              paramPicture;
     struct {
         HWND                        hList;
@@ -103,6 +111,7 @@ static LRESULT NotifyCallback(PPICTUREPNGWNDEXTRA pngInfo, NMHDR* pNotify);
 static void DestroyCallback(PPICTUREPNGWNDEXTRA pngInfo);
 static LRESULT GetSaveParamCallback(PPICTUREPNGWNDEXTRA pngInfo, PPICTURESAVEPARAM pSaveParam);
 static void InitPngChunkWindow(PPICTUREPNGWNDEXTRA pngInfo);
+static void SetPngPictureInfoParts(PPICTUREPNGWNDEXTRA pngInfo);
 static HANINT PngProcess(PPICTUREPNGWNDEXTRA pngInfo);
 static PPICTUREPNGWNDEXTRA ReallocPngInfoMemory(PPICTUREPNGWNDEXTRA pngInfo);
 static SIZE_T GetUncompressBufferSize(PPICTUREPNGWNDEXTRA pngInfo);
@@ -112,6 +121,7 @@ static PICTUREPNGCHUNKTYPE GetPngChunkType(HANPCSTR pType);
 static void SetChunkMap(const uint8_t* pData, HANINT nChunkCnt, PPICTUREPNGWNDEXTRA pngInfo);
 static void MergeIDATData(PPICTUREPNGWNDEXTRA pngInfo);
 static void GetPngShowSize(PPICTUREPNGWNDEXTRA pngInfo, HANINT* pW, HANINT* pH);
+static void UpdatePngPictureInfo(PPICTUREPNGWNDEXTRA pngInfo);
 static void PicturePngPrintHexData(HANPSTR pText, HANSIZE nTextLen, const uint8_t* pData, HANSIZE nDataLen);
 static LRESULT ChunkListNotifyCallback(PPICTUREPNGWNDEXTRA pngInfo, NMHDR* pNotify);
 static void UpdateChunkInfoWindow(PPICTUREPNGWNDEXTRA pngInfo, HANINT nId);
@@ -193,6 +203,11 @@ static const PICTUREPNGCHUNKHEADERINFO sg_pPngChunkListHeader[PICTURE_PNG_CHUNK_
 static const HANINT sg_pPngChunkInfoHeaderWidth[PICTURE_PNG_CHUNK_LIST_HEADER_CNT] = {
     [PICTURE_PNG_CHUNK_INFO_HEADER_FIELD] = 100,
     [PICTURE_PNG_CHUNK_INFO_HEADER_VALUE] = 300,
+};
+static const HANINT sg_pPngPictureInfoWidth[PICTURE_PNG_PICTURE_INFO_CNT] = {
+    [PICTURE_PNG_PICTURE_INFO_MAIN] = 300,
+    [PICTURE_PNG_PICTURE_INFO_SIZE] = 200,
+    [PICTURE_PNG_PICTURE_INFO_PIXEL] = -1,
 };
 static const PICTUREPNGCHUNKTYPEINFO sg_pPngChunkType[PICTURE_PNG_CHUNK_TYPE_CNT] = {
     [PICTURE_PNG_CHUNK_TYPE_IHDR] = {
@@ -342,6 +357,9 @@ static LRESULT CALLBACK PicturePngWndProc(HWND hPicturePng, UINT message, WPARAM
         case PCTM_ZOOM: {
             (void)SendMessage(pngInfo->hEditTool, message, wParam, lParam);
         } break;
+        case PCTM_SETPIXELINFO: {
+            SendMessage(pngInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_PNG_PICTURE_INFO_PIXEL, SBT_NOBORDERS), lParam);
+        } break;
 
         default: {
             lWndProcRet = DefWindowProc(hPicturePng, message, wParam, lParam);
@@ -400,6 +418,11 @@ static LRESULT CreateCallback(HWND hPicturePng, LPARAM lParam)
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
             nWinX, nWinY, nWinW, nWinH,
             hPicturePng, (HMENU)WID_PICTURE_PNG_CHUNK_INFO, hInst, NULL);
+            
+        pngInfo->hPictureInfo = CreateWindow(STATUSCLASSNAME, NULL,
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hPicturePng, (HMENU)WID_PICTURE_PICTURE_STATUS_BAR, hInst, NULL);
 
         SendMessage(pngInfo->chunk.hList, WM_SETFONT, (WPARAM)(pngInfo->hFont.hHex), (LPARAM)TRUE);
         SendMessage(pngInfo->chunk.hInfo, WM_SETFONT, (WPARAM)(pngInfo->hFont.hSys), (LPARAM)TRUE);
@@ -408,6 +431,7 @@ static LRESULT CreateCallback(HWND hPicturePng, LPARAM lParam)
         ListView_SetExtendedListViewStyle(pngInfo->chunk.hInfo, LVS_EX_FULLROWSELECT);
         
         InitPngChunkWindow(pngInfo);
+        SetPngPictureInfoParts(pngInfo);
     }
     /* 解码文件的数据段，填充信息 */
     if (-1 != lWndProcRet)
@@ -436,6 +460,7 @@ static LRESULT CreateCallback(HWND hPicturePng, LPARAM lParam)
         SetChunkMap(pPictureCreateParam->pData, nChunkCnt, pngInfo);
         MergeIDATData(pngInfo);
         bDecodeRet = DecodeIDAT(pngInfo);
+        UpdatePngPictureInfo(pngInfo);
         
         /* 绘制预览图 */
         nWinX += nWinW + PICTURE_WINDOW_DX;
@@ -464,10 +489,13 @@ static void SizeCallback(HWND hPicturePng, PPICTUREPNGWNDEXTRA pngInfo)
     HANINT nWinW;
     HANINT nWinH;
     RECT rcClientSize;
+    RECT rcPictureInfo;
     
+    SendMessage(pngInfo->hPictureInfo, WM_SIZE, 0, 0);
+    GetClientRect(pngInfo->hPictureInfo, &rcPictureInfo);
     GetClientRect(hPicturePng, &rcClientSize);
     nWinW = GetRectW(&rcClientSize) - (PICTURE_WINDOW_DY * 2);
-    nWinH = GetRectH(&rcClientSize) - nWinY - PICTURE_WINDOW_DY;
+    nWinH = GetRectH(&rcClientSize) - GetRectH(&rcPictureInfo) - nWinY - PICTURE_WINDOW_DY;
 
     MoveWindow(pngInfo->hEditTool, nWinX, nWinY, nWinW, nWinH, TRUE);
 }
@@ -517,6 +545,22 @@ static void InitPngChunkWindow(PPICTUREPNGWNDEXTRA pngInfo)
         lvTitle.fmt = LVCFMT_LEFT;
         ListView_InsertColumn(pngInfo->chunk.hInfo, iLoop, &lvTitle);
     }
+}
+static void SetPngPictureInfoParts(PPICTUREPNGWNDEXTRA pngInfo)
+{
+    HANINT pInfoRightPos = 0;
+    HANINT pInfoParts[PICTURE_PNG_PICTURE_INFO_CNT];
+
+    for (PICTUREPNGPICTUREINFO iLoop = 0; iLoop < PICTURE_PNG_PICTURE_INFO_CNT; iLoop++)
+    {
+        if (-1 != sg_pPngPictureInfoWidth[iLoop])
+        {
+            pInfoRightPos += sg_pPngPictureInfoWidth[iLoop];
+            pInfoParts[iLoop] = pInfoRightPos;
+        }
+        else { pInfoParts[iLoop] = -1; }
+    }
+    SendMessage(pngInfo->hPictureInfo, SB_SETPARTS, PICTURE_PNG_PICTURE_INFO_CNT, (LPARAM)pInfoParts);
 }
 static HANINT PngProcess(PPICTUREPNGWNDEXTRA pngInfo)
 {
@@ -735,6 +779,21 @@ static void GetPngShowSize(PPICTUREPNGWNDEXTRA pngInfo, HANINT* pW, HANINT* pH)
     
     *pH = PICTURE_PNG_INFO_HEIGHT;
     *pW = (HANINT)((HANDOUBLE)(*pH) / pxHeight * pxWidth);
+}
+static void UpdatePngPictureInfo(PPICTUREPNGWNDEXTRA pngInfo)
+{
+    PPICTURERESOLUTION pResolution = &(pngInfo->pictureData.pPictureInfo->pPicture[0]->pxResolution);
+    HANCHAR pText[HAN_PICTURE_PNG_TEXT_BUF_SIZE];
+
+    switch (pngInfo->chunk.chunkInfo.IHDR.cInterlace) {
+        case 0: { HAN_strncpy(pText, TEXT("PNG（逐行扫描）"), HAN_PICTURE_PNG_TEXT_BUF_SIZE); } break;
+        case 1: { HAN_strncpy(pText, TEXT("PNG（隔行扫描）"), HAN_PICTURE_PNG_TEXT_BUF_SIZE); } break;
+        default: { HAN_strncpy(pText, TEXT("PNG（未知扫描方式）"), HAN_PICTURE_PNG_TEXT_BUF_SIZE); } break;
+    }
+    SendMessage(pngInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_PNG_PICTURE_INFO_MAIN, SBT_NOBORDERS), (LPARAM)pText);
+
+    HAN_snprintf(pText, HAN_PICTURE_PNG_TEXT_BUF_SIZE, TEXT("%u×%u"), pResolution->pxWidth, pResolution->pxHeight);
+    SendMessage(pngInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_PNG_PICTURE_INFO_SIZE, SBT_NOBORDERS), (LPARAM)pText);
 }
 static void PicturePngPrintHexData(HANPSTR pText, HANSIZE nTextLen, const uint8_t* pData, HANSIZE nDataLen)
 {

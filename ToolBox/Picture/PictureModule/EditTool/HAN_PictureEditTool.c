@@ -7,10 +7,10 @@
 typedef struct tagPICTUREPNGWNDEXTRA {
     HANDLE                          hHeap;
     HINSTANCE                       hInst;
+    HWND                            hPicture;
     HWND                            hSelf;
     HWND                            hPaint;
     HWND                            hConsole;
-    HWND                            hStatusBar;
     HANPPICTUREINFO                 pPictureInfo;
 } PICTUREEDITTOOLWNDEXTRA, * PPICTUREEDITTOOLWNDEXTRA;
 
@@ -23,6 +23,7 @@ static void GetPaintRect(const RECT* pPaint, RECT* pPaper);
 
 static BOOL s_PictureEditToolSetPaintId(PPICTUREEDITTOOLWNDEXTRA etInfo, HANSIZE nId);
 static HANSIZE s_PictureEditToolGetPaintId(PPICTUREEDITTOOLWNDEXTRA etInfo);
+static void s_PictureEditToolSetPixelInfo(PPICTUREEDITTOOLWNDEXTRA etInfo, HANPSTR pPixelInfo);
 
 void RegisterHANPictureEditTool(HINSTANCE hInst, HBRUSH hBackground)
 {
@@ -59,6 +60,11 @@ HANSIZE PictureEditToolGetPaintId(HWND hEditTool)
     return SendMessage(hEditTool, PETM_GETPAINTID, (WPARAM)0, (LPARAM)0);
 }
 
+void PictureEditToolSetPixelInfo(HWND hEditTool, HANPSTR pPixelInfo)
+{
+    SendMessage(hEditTool, PETM_SETPIXELINFO, (WPARAM)0, (LPARAM)pPixelInfo);
+}
+
 static LRESULT CALLBACK PictureEditToolWndProc(HWND hPictureEditTool, UINT message, WPARAM wParam, LPARAM lParam)
 {
     LRESULT lWndProcRet = 0;
@@ -72,7 +78,6 @@ static LRESULT CALLBACK PictureEditToolWndProc(HWND hPictureEditTool, UINT messa
         } break;
         case WM_SIZE: {
             SizeCallback(hPictureEditTool, etInfo);
-            lWndProcRet = DefWindowProc(hPictureEditTool, message, wParam, lParam);
         } break;
         case WM_CTLCOLORSTATIC: {
             lWndProcRet = (INT_PTR)GetStockObject(WHITE_BRUSH);
@@ -91,6 +96,9 @@ static LRESULT CALLBACK PictureEditToolWndProc(HWND hPictureEditTool, UINT messa
         } break;
         case PETM_GETPAINTID: {
             lWndProcRet = s_PictureEditToolGetPaintId(etInfo);
+        } break;
+        case PETM_SETPIXELINFO: {
+            s_PictureEditToolSetPixelInfo(etInfo, (HANPSTR)lParam);
         } break;
 
         default: {
@@ -130,6 +138,7 @@ static LRESULT CreateCallback(HWND hPictureEditTool, LPARAM lParam)
         etInfo->hHeap = hHeap;
         etInfo->hInst = hInst;
         etInfo->hSelf = hPictureEditTool;
+        etInfo->hPicture = ((LPCREATESTRUCT)lParam)->hwndParent;
         etInfo->pPictureInfo = pPictureInfo;
 
         GetClientRect(hPictureEditTool, &rcClientSize);
@@ -152,10 +161,6 @@ static LRESULT CreateCallback(HWND hPictureEditTool, LPARAM lParam)
             WS_CHILD | WS_VISIBLE | WS_BORDER,
             nWinX, nWinY, nWinW, nWinH,
             hPictureEditTool, (HMENU)WID_PICTURE_EDIT_TOOL_CONSOLE, hInst, NULL);
-        etInfo->hStatusBar = CreateWindow(STATUSCLASSNAME, NULL,
-            WS_CHILD | WS_VISIBLE,
-            0, 0, 0, 0,
-            hPictureEditTool, (HMENU)WID_PICTURE_EDIT_TOOL_STATUS_BAR, hInst, NULL);
     }
 
     return lWndProcRet;
@@ -207,4 +212,8 @@ static BOOL s_PictureEditToolSetPaintId(PPICTUREEDITTOOLWNDEXTRA etInfo, HANSIZE
 static HANSIZE s_PictureEditToolGetPaintId(PPICTUREEDITTOOLWNDEXTRA etInfo)
 {
     return PictureEditToolPaintGetPaintId(etInfo->hPaint);
+}
+static void s_PictureEditToolSetPixelInfo(PPICTUREEDITTOOLWNDEXTRA etInfo, HANPSTR pPixelInfo)
+{
+    SendMessage(etInfo->hPicture, PCTM_SETPIXELINFO, (WPARAM)0, (LPARAM)pPixelInfo);
 }

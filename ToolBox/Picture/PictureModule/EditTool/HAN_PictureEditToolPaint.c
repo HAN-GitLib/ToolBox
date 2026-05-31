@@ -1,6 +1,7 @@
 #include <math.h>
 #include <float.h>
 
+#include "HAN_PictureEditTool.h"
 #include "HAN_PictureEditToolPaint.h"
 #include "..\..\HAN_PictureLib.h"
 
@@ -14,10 +15,18 @@ typedef enum {
     PETPM_GETPAINTID,                   // 获取当前激活的图片 ID（WPARAM：未使用，LPARAM：未使用，return：从 0 开始的图片 ID）
 } PICTUREEDITTOOLPAINTMESSAGE;
 
+typedef struct tagPICTUREEDITTOOLPAINTPIXEL{
+    PPOINT                          pPicturePos;
+    PPICTUREWINPIXEL                pPixel;
+    HANSIZE                         nPixelSize;
+    uint8_t                         pBuf[];
+} PICTUREEDITTOOLPAINTPIXEL, * PPICTUREEDITTOOLPAINTPIXEL;
+
 typedef struct tagPICTUREEDITTOOLPAINTWNDEXTRA {
     HANDLE                          hHeap;
     HINSTANCE                       hInst;
     HWND                            hSelf;
+    HWND                            hEditTool;
     HWND                            hConsole;
     struct {
         HWND                        hZoom;
@@ -31,8 +40,7 @@ typedef struct tagPICTUREEDITTOOLPAINTWNDEXTRA {
         HANPPICTUREINFO             pInfo;
         HANPPICTURE                 pPicture;
     } picture;
-    PICTUREWINPIXEL*                pPaintData;
-    HANSIZE                         nPaintDataSize;
+    PPICTUREEDITTOOLPAINTPIXEL      pPaintPixel;
     struct {
         HFONT                       hHex;
         HFONT                       hSys;
@@ -66,7 +74,9 @@ static LRESULT PaintMouseWheelCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, HA
 static void PaintCommandCallback(HWND hPictureEditToolPaint, PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, WPARAM wParam, LPARAM lParam);
 static void PaintDestroyCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo);
 static void ExternalZoomCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, HANINT nZoom);
-static HANSIZE GetPaintDataSize(const RECT* pPaintRect);
+static HANSIZE GetPaintPixelInfoSize(const RECT* pPaintRect);
+static HANSIZE GetPaintPixelDataSize(const RECT* pPaintRect);
+static void UpdatePaintPixelInfo(PPICTUREEDITTOOLPAINTPIXEL pPaintPixel, const RECT* pPaintRect);
 static inline void GetPaintClientRect(RECT* pClient, const RECT* pPaint);
 static void MovePaintScroll(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, const RECT* pPaintRect);
 static void GetPaintPictureResolution(PPICTURERESOLUTION pResolution, HANPCPICTUREINFO pPictureInfo);
@@ -312,9 +322,9 @@ static LRESULT PaintCreateCallback(HWND hPictureEditToolPaint, LPARAM lParam)
     HANPPICTUREINFO pPictureInfo = ((LPCREATESTRUCT)lParam)->lpCreateParams;
     RECT rcClientSize;
     RECT rcPaperSize;
-    PICTUREWINPIXEL* pPaintData;
+    PPICTUREEDITTOOLPAINTPIXEL pPaintPixel;
     PICTURERESOLUTION pxResolution;
-    HANSIZE nPaintDataSize;
+    HANSIZE nPaintPixelInfoSize;
     HANSIZE nPaintPictureSize;
 
     HANINT nWinX;
@@ -328,14 +338,14 @@ static LRESULT PaintCreateCallback(HWND hPictureEditToolPaint, LPARAM lParam)
     {
         GetClientRect(hPictureEditToolPaint, &rcClientSize);
         GetPaintPictureResolution(&pxResolution, pPictureInfo);
-        nPaintDataSize = GetPaintDataSize(&rcClientSize);
+        nPaintPixelInfoSize = GetPaintPixelInfoSize(&rcClientSize);
         nPaintPictureSize = GetPictureMemSize(&pxResolution);
         etpInfo = (PPICTUREEDITTOOLPAINTWNDEXTRA)HANWinHeapAlloc(hHeap, NULL, sizeof(PICTUREEDITTOOLPAINTWNDEXTRA) + nPaintPictureSize);
-        pPaintData = (PICTUREWINPIXEL*)HANWinHeapAlloc(hHeap, NULL, nPaintDataSize);
-        if ((NULL == etpInfo) || (NULL == pPaintData))
+        pPaintPixel = (PPICTUREEDITTOOLPAINTPIXEL)HANWinHeapAlloc(hHeap, NULL, nPaintPixelInfoSize);
+        if ((NULL == etpInfo) || (NULL == pPaintPixel))
         {
             if (NULL != etpInfo) { HANWinHeapFree(hHeap, 0, etpInfo); }
-            if (NULL != pPaintData) { HANWinHeapFree(hHeap, 0, pPaintData); }
+            if (NULL != pPaintPixel) { HANWinHeapFree(hHeap, 0, pPaintPixel); }
             lWndProcRet = -1;
         }
     }
@@ -347,12 +357,13 @@ static LRESULT PaintCreateCallback(HWND hPictureEditToolPaint, LPARAM lParam)
         etpInfo->hHeap = hHeap;
         etpInfo->hInst = hInst;
         etpInfo->hSelf = hPictureEditToolPaint;
+        etpInfo->hEditTool =((LPCREATESTRUCT)lParam)->hwndParent;
         etpInfo->hConsole = NULL;
         etpInfo->picture.nPaintId = 0;
         etpInfo->picture.pInfo = pPictureInfo;
-        etpInfo->pPaintData = pPaintData;
-        etpInfo->nPaintDataSize = nPaintDataSize;
+        etpInfo->pPaintPixel = pPaintPixel;
         etpInfo->picture.pPicture = (HANPPICTURE)(etpInfo->pBuf);
+        UpdatePaintPixelInfo(pPaintPixel, &rcClientSize);
 
         etpInfo->hFont.hHex = CreateFontIndirect(&g_lfHexFont);
         etpInfo->hFont.hSys = CreateFontIndirect(&g_lfSysFont);
@@ -407,9 +418,9 @@ static LRESULT PaintCreateCallback(HWND hPictureEditToolPaint, LPARAM lParam)
 }
 static void PaintSizeCallback(HWND hPictureEditToolPaint, PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo)
 {
-    PICTUREWINPIXEL* pPaintData = etpInfo->pPaintData;
+    PPICTUREEDITTOOLPAINTPIXEL pPaintPixel = etpInfo->pPaintPixel;
     HANPPICTURE pPicture = GetPaintPicture(etpInfo);
-    HANSIZE nPaintDataSize;
+    HANSIZE nPaintPixelSize;
     RECT rcPaintSize;
     RECT rcPaintClientSize;
     RECT rcPaperSize;
@@ -421,18 +432,18 @@ static void PaintSizeCallback(HWND hPictureEditToolPaint, PPICTUREEDITTOOLPAINTW
 
     GetClientRect(hPictureEditToolPaint, &rcPaintSize);
     GetPaintClientRect(&rcPaintClientSize, &rcPaintSize);
-    nPaintDataSize = GetPaintDataSize(&rcPaintClientSize);
-    if (etpInfo->nPaintDataSize < nPaintDataSize)
+    nPaintPixelSize = GetPaintPixelDataSize(&rcPaintClientSize);
+    if (pPaintPixel->nPixelSize < nPaintPixelSize)
     {
-        pPaintData = (PICTUREWINPIXEL*)HANWinHeapAlloc(etpInfo->hHeap, etpInfo->pPaintData, nPaintDataSize);
-        if (NULL != pPaintData)
+        pPaintPixel = (PPICTUREEDITTOOLPAINTPIXEL)HANWinHeapAlloc(etpInfo->hHeap, pPaintPixel, GetPaintPixelInfoSize(&rcPaintClientSize));
+        if (NULL != pPaintPixel)
         {
-            etpInfo->pPaintData = pPaintData;
-            etpInfo->nPaintDataSize = nPaintDataSize;
+            UpdatePaintPixelInfo(pPaintPixel, &rcPaintClientSize);
+            etpInfo->pPaintPixel = pPaintPixel;
         }
     }
 
-    if (NULL != pPaintData)
+    if (NULL != pPaintPixel)
     {
         GetPaintPaperRect(pPicture, &rcPaintClientSize, &rcPaperSize, sg_pZoom[ComboBoxGetCursel(etpInfo->zoom.hZoom)].nZoom);
         nWinX = rcPaperSize.left;
@@ -592,7 +603,7 @@ static void PaintCommandCallback(HWND hPictureEditToolPaint, PPICTUREEDITTOOLPAI
 }
 static void PaintDestroyCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo)
 {
-    HANWinHeapFree(etpInfo->hHeap, 0, etpInfo->pPaintData);
+    HANWinHeapFree(etpInfo->hHeap, 0, etpInfo->pPaintPixel);
     HANWinHeapFree(etpInfo->hHeap, 0, etpInfo);
 }
 static void ExternalZoomCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, HANINT nZoom)
@@ -611,12 +622,25 @@ static void ExternalZoomCallback(PPICTUREEDITTOOLPAINTWNDEXTRA etpInfo, HANINT n
         ZoomCallback(etpInfo, CBN_SELCHANGE);
     }
 }
-static HANSIZE GetPaintDataSize(const RECT* pPaintRect)
+static HANSIZE GetPaintPixelInfoSize(const RECT* pPaintRect)
+{
+    LONG nWinW = GetRectW(pPaintRect);
+    LONG nWinH = GetRectH(pPaintRect);
+
+    return (sizeof(PICTUREEDITTOOLPAINTPIXEL) + (nWinW * nWinH * (sizeof(POINT) + sizeof(PICTUREWINPIXEL))));
+}
+static HANSIZE GetPaintPixelDataSize(const RECT* pPaintRect)
 {
     LONG nWinW = GetRectW(pPaintRect);
     LONG nWinH = GetRectH(pPaintRect);
 
     return (nWinW * nWinH * sizeof(PICTUREWINPIXEL));
+}
+static void UpdatePaintPixelInfo(PPICTUREEDITTOOLPAINTPIXEL pPaintPixel, const RECT* pPaintRect)
+{
+    pPaintPixel->nPixelSize = GetPaintPixelDataSize(pPaintRect);
+    pPaintPixel->pPixel = (PPICTUREWINPIXEL)(pPaintPixel->pBuf);
+    pPaintPixel->pPicturePos = (PPOINT)&(pPaintPixel->pBuf[pPaintPixel->nPixelSize]);
 }
 static inline void GetPaintClientRect(RECT* pClient, const RECT* pPaint)
 {
@@ -788,7 +812,7 @@ static LRESULT PaperCreateCallback(HWND hPictureEditToolPaper, LPARAM lParam)
 static void PaperPaintCallback(HDC hDC, PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const RECT* pPaperSize)
 {
     BITMAPINFO bmiPaint;
-    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintData;
+    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintPixel->pPixel;
     HANPPICTURE pPicture = GetPaintPicture(paperInfo->pPaint);
     LONG nWinW = GetRectW(pPaperSize);
     LONG nWinH = GetRectH(pPaperSize);
@@ -807,7 +831,7 @@ static void PaperPaintCallback(HDC hDC, PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo,
     bmiPaint.bmiHeader.biPlanes = 1;
     bmiPaint.bmiHeader.biBitCount = 32;
     bmiPaint.bmiHeader.biCompression = BI_RGB;
-    bmiPaint.bmiHeader.biSizeImage = (DWORD)(paperInfo->pPaint->nPaintDataSize);
+    bmiPaint.bmiHeader.biSizeImage = (DWORD)(paperInfo->pPaint->pPaintPixel->nPixelSize);
     StretchDIBits(hDC, 0, 0, nWinW, nWinH, 0, 0, nWinW, nWinH, pPixel, (BITMAPINFO*)&bmiPaint.bmiHeader, DIB_RGB_COLORS, SRCCOPY);
     
     /* 图片窗口和缩放列表窗口有部分重叠，重绘图片会导致缩放窗口被部分绘制，视觉上就是图片遮住了缩放按钮，所以在绘制完图片后需要重绘缩放窗口 */
@@ -815,7 +839,24 @@ static void PaperPaintCallback(HDC hDC, PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo,
 }
 static void PaperMouseMoveCallback(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, PPOINT pPos)
 {
-    printf("%d, %d\n", pPos->x, pPos->y);
+    PPOINT pPixelPos = paperInfo->pPaint->pPaintPixel->pPicturePos;
+    HANPPICTURE pPicture = GetPaintPicture(paperInfo->pPaint);
+    PPICTURERGBA* pPictureMap = pPicture->pPictureMap;
+    HANCHAR pText[HAN_PICTURE_EDIT_TOOL_TEXT_BUF_SIZE];
+    PPICTURERGBA pRGBA;
+    RECT rcPaperSize;
+    HANSIZE nOffset;
+
+    GetClientRect(paperInfo->hSelf, &rcPaperSize);
+    nOffset = pPos->y * GetRectW(&rcPaperSize) + pPos->x;
+    pPixelPos = &pPixelPos[nOffset];
+    pRGBA = &(pPictureMap[pPixelPos->y][pPixelPos->x]);
+
+    HAN_snprintf(pText, HAN_PICTURE_EDIT_TOOL_TEXT_BUF_SIZE, TEXT("位置（%ld, %ld）  颜色（R:%d, G:%d, B:%d, A:%d）"),
+        pPixelPos->x, pPixelPos->y,
+        pRGBA->r, pRGBA->g, pRGBA->b, pRGBA->a
+    );
+    PictureEditToolSetPixelInfo(paperInfo->pPaint->hEditTool, pText);
 }
 static void PaperDestroyCallback(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo)
 {
@@ -823,7 +864,7 @@ static void PaperDestroyCallback(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo)
 }
 static void PaperPaintBackground(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const RECT* pPaper)
 {
-    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintData;
+    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintPixel->pPixel;
     HANSIZE nAlphaStartIdH;
     HANSIZE nAlphaStartIdV;
     HANSIZE nAlphaStartOffsetIdH;
@@ -913,7 +954,9 @@ static void PaintCallbackZoom100000(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, con
 static void PaintCallbackZoomOut(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const RECT* pPaperSize, const RECT* pPictureSize, LONG nZoom)
 {
     HANPPICTURE pPicture = paperInfo->pPaint->picture.pPicture;
-    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintData;
+    PPICTUREEDITTOOLPAINTPIXEL pPaintPixel = paperInfo->pPaint->pPaintPixel;
+    PPOINT pPicturePos = pPaintPixel->pPicturePos;
+    PICTUREWINPIXEL* pPixel = pPaintPixel->pPixel;
     PPICTURERGBA* pRGBA = pPicture->pPictureMap;
     HANSIZE nOffset = 0;
     HANSIZE nRow;
@@ -925,6 +968,8 @@ static void PaintCallbackZoomOut(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const 
         nCol = pPictureSize->left;
         for (LONG jLoop = pPaperSize->left; jLoop < pPaperSize->right; jLoop++)
         {
+            pPicturePos[nOffset].x = (LONG)nCol;
+            pPicturePos[nOffset].y = (LONG)nRow;
             pPixel[nOffset].ptRGBA = UpdateRGBA(pRGBA[nRow][nCol], pPixel[nOffset].ptRGBA, paperInfo->pPaint);
             nCol += nZoom;
             nOffset++;
@@ -935,7 +980,9 @@ static void PaintCallbackZoomOut(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const 
 static void PaintCallbackZoomIn(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const RECT* pPaperSize, const RECT* pPictureSize, LONG nZoom)
 {
     HANPPICTURE pPicture = paperInfo->pPaint->picture.pPicture;
-    PICTUREWINPIXEL* pPixel = paperInfo->pPaint->pPaintData;
+    PPICTUREEDITTOOLPAINTPIXEL pPaintPixel = paperInfo->pPaint->pPaintPixel;
+    PPOINT pPicturePos = pPaintPixel->pPicturePos;
+    PICTUREWINPIXEL* pPixel = pPaintPixel->pPixel;
     PPICTURERGBA* pRGBA = pPicture->pPictureMap;
     HANSIZE nOffset = 0;
     HANSIZE nRow;
@@ -960,6 +1007,8 @@ static void PaintCallbackZoomIn(PPICTUREEDITTOOLPAPERWNDEXTRA paperInfo, const R
         nCol = pPictureSize->left;
         for (LONG jLoop = pPaperSize->left; jLoop < pPaperSize->right; jLoop++)
         {
+            pPicturePos[nOffset].x = (LONG)nCol;
+            pPicturePos[nOffset].y = (LONG)nRow;
             pPixel[nOffset].ptRGBA = UpdateRGBA(pRGBA[nRow][nCol], pPixel[nOffset].ptRGBA, paperInfo->pPaint);
             nCntX++;
             if (nZoom <= nCntX)

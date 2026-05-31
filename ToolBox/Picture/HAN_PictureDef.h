@@ -38,6 +38,7 @@ typedef enum {
     WID_PICTURE_TAB,
     WID_PICTURE_TAB_CLOSE_BUTTON,
     WID_PICTURE_PICTURE_WINDOW,
+    WID_PICTURE_PICTURE_STATUS_BAR,
     /* 加速键指令码 */
     WID_PICTURE_ACCEL_COMMAND_SAVE,
     WID_PICTURE_ACCEL_COMMAND_ZOOM_IN,
@@ -50,7 +51,6 @@ typedef enum {
     WID_PICTURE_EDIT_TOOL_ZOOM,
     WID_PICTURE_EDIT_TOOL_PAPER,
     WID_PICTURE_EDIT_TOOL_CONSOLE,
-    WID_PICTURE_EDIT_TOOL_STATUS_BAR,
     /* 图标工具 */
     WID_PICTURE_ICON_LIST,
     WID_PICTURE_ICON_INFO,
@@ -103,6 +103,7 @@ typedef enum {
     PCTM_BASE = WM_USER,    // 不使用的消息值，自定义消息请在下方添加
     PCTM_GETSAVEPARAM,      // 获取保存参数，所有图片模组都要支持该消息（WPARAM：未使用，LPARAM：PPICTURESAVEPARAM 型指针，用于接收参数）
     PCTM_ZOOM,              // 缩放图片（WPARAM：正数表示广大，负数表示缩小，LPARAM：未使用）
+    PCTM_SETPIXELINFO,      // 更新状态栏的像素信息 ID（WPARAM：PPOINT 类型的像素坐标，LPARAM：PCPICTURERGBA 类型的颜色，return：未使用）
     PCTM_MODELBASE,         // 该消息不使用，作为图片模组的消息的起始消息，图片模组自定义的消息都应大于该消息
 } PICTUREMESSAGE;
 
@@ -130,7 +131,7 @@ typedef union {
     PICTURERGBA         ptRGBA;
     uint8_t             pRGBA[4];
     COLORREF            crRGBA;
-} PICTUREWINPIXEL;
+} PICTUREWINPIXEL, * PPICTUREWINPIXEL;
 
 typedef struct tagPICTURERESOLUTION {
     uint32_t            pxWidth;

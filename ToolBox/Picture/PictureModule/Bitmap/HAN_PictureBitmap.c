@@ -20,6 +20,13 @@ typedef enum {
     PICTURE_BITMAP_ROW_ORDER_NEG,
 } PICTUREBITMAPROWORDER;
 
+typedef enum {
+    PICTURE_BITMAP_PICTURE_INFO_MAIN,
+    PICTURE_BITMAP_PICTURE_INFO_SIZE,
+    PICTURE_BITMAP_PICTURE_INFO_PIXEL,
+    PICTURE_BITMAP_PICTURE_INFO_CNT,
+} PICTUREBITMAPPICTUREINFO;
+
 typedef struct tagPICTUREBITMAPWNDEXTRA {
     HANDLE                          hHeap;
     HINSTANCE                       hInst;
@@ -27,6 +34,7 @@ typedef struct tagPICTUREBITMAPWNDEXTRA {
     HWND                            hInfo;
     HWND                            hShow;
     HWND                            hEditTool;
+    HWND                            hPictureInfo;
     PICTURECREATEPARAM              paramPicture;
     struct {
         uint32_t                    nFileSize;
@@ -49,9 +57,11 @@ static void SizeCallback(HWND hPictureBitmap, PPICTUREBITMAPWNDEXTRA bmInfo);
 static void DestroyCallback(PPICTUREBITMAPWNDEXTRA bmInfo);
 static LRESULT GetSaveParamCallback(PPICTUREBITMAPWNDEXTRA bmInfo, PPICTURESAVEPARAM pSaveParam);
 static void InitBitmapInfo(HWND hBitmapInfo);
+static void SetBitmapPictureInfoParts(PPICTUREBITMAPWNDEXTRA bmInfo);
 static void BitmapProcess(PPICTUREBITMAPWNDEXTRA bmInfo);
 static PPICTUREBITMAPWNDEXTRA ReallocBitmapInfoMemory(PPICTUREBITMAPWNDEXTRA bmInfo);
 static void GetBitmapShowSize(PPICTUREBITMAPWNDEXTRA bmInfo, HANINT* pW, HANINT* pH);
+static void UpdateBitmapPictureInfo(PPICTUREBITMAPWNDEXTRA bmInfo);
 
 static BOOL DecodeBitmap(PPICTUREBITMAPWNDEXTRA bmInfo);
 static void ReverseBitmapRows(PPICTUREBITMAPWNDEXTRA bmInfo);
@@ -61,6 +71,11 @@ static const HANPSTR sg_pBitmapInfoKeyName[PICTURE_BITMAP_KEY_CNT] = {
     [PICTURE_BITMAP_KEY_RESOLUTION] = TEXT("分辨率"),
     [PICTURE_BITMAP_KEY_PIXEL_BITS] = TEXT("像素位数"),
     [PICTURE_BITMAP_KEY_PLANES] = TEXT("平面数"),
+};
+static const HANINT sg_pBitmapPictureInfoWidth[PICTURE_BITMAP_PICTURE_INFO_CNT] = {
+    [PICTURE_BITMAP_PICTURE_INFO_MAIN] = 300,
+    [PICTURE_BITMAP_PICTURE_INFO_SIZE] = 200,
+    [PICTURE_BITMAP_PICTURE_INFO_PIXEL] = -1,
 };
 
 BOOL CheckBitmapType(const uint8_t* pData, HANSIZE nLen)
@@ -167,6 +182,9 @@ static LRESULT CALLBACK PictureBitmapWndProc(HWND hPictureBitmap, UINT message, 
         case PCTM_ZOOM: {
             (void)SendMessage(bmInfo->hEditTool, message, wParam, lParam);
         } break;
+        case PCTM_SETPIXELINFO: {
+            SendMessage(bmInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_BITMAP_PICTURE_INFO_PIXEL, SBT_NOBORDERS), lParam);
+        } break;
 
         default: {
             lWndProcRet = DefWindowProc(hPictureBitmap, message, wParam, lParam);
@@ -217,12 +235,18 @@ static LRESULT CreateCallback(HWND hPictureBitmap, LPARAM lParam)
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
             nWinX, nWinY, nWinW, nWinH,
             hPictureBitmap, (HMENU)WID_PICTURE_BITMAP_INFO, hInst, NULL);
+            
+        bmInfo->hPictureInfo = CreateWindow(STATUSCLASSNAME, NULL,
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hPictureBitmap, (HMENU)WID_PICTURE_PICTURE_STATUS_BAR, hInst, NULL);
 
         SendMessage(bmInfo->hInfo, WM_SETFONT, (WPARAM)(bmInfo->hFont.hSys), (LPARAM)TRUE);
 
         ListView_SetExtendedListViewStyle(bmInfo->hInfo, LVS_EX_FULLROWSELECT);
         
         InitBitmapInfo(bmInfo->hInfo);
+        SetBitmapPictureInfoParts(bmInfo);
     }
     /* 解码文件，填充信息 */
     if (-1 != lWndProcRet)
@@ -247,6 +271,7 @@ static LRESULT CreateCallback(HWND hPictureBitmap, LPARAM lParam)
         BOOL bDecodeRet = TRUE;
 
         bDecodeRet = DecodeBitmap(bmInfo);
+        UpdateBitmapPictureInfo(bmInfo);
         
         /* 绘制预览图 */
         nWinX += nWinW + PICTURE_WINDOW_DX;
@@ -275,10 +300,13 @@ static void SizeCallback(HWND hPictureBitmap, PPICTUREBITMAPWNDEXTRA bmInfo)
     HANINT nWinW;
     HANINT nWinH;
     RECT rcClientSize;
+    RECT rcPictureInfo;
     
+    SendMessage(bmInfo->hPictureInfo, WM_SIZE, 0, 0);
+    GetClientRect(bmInfo->hPictureInfo, &rcPictureInfo);
     GetClientRect(hPictureBitmap, &rcClientSize);
     nWinW = GetRectW(&rcClientSize) - (PICTURE_WINDOW_DY * 2);
-    nWinH = GetRectH(&rcClientSize) - nWinY - PICTURE_WINDOW_DY;
+    nWinH = GetRectH(&rcClientSize) - GetRectH(&rcPictureInfo) - nWinY - PICTURE_WINDOW_DY;
 
     MoveWindow(bmInfo->hEditTool, nWinX, nWinY, nWinW, nWinH, TRUE);
 }
@@ -322,6 +350,22 @@ static void InitBitmapInfo(HWND hBitmapInfo)
         lvItem.pszText = sg_pBitmapInfoKeyName[iLoop];
         ListView_InsertItem(hBitmapInfo, &lvItem);
     }
+}
+static void SetBitmapPictureInfoParts(PPICTUREBITMAPWNDEXTRA bmInfo)
+{
+    HANINT pInfoRightPos = 0;
+    HANINT pInfoParts[PICTURE_BITMAP_PICTURE_INFO_CNT];
+
+    for (PICTUREBITMAPPICTUREINFO iLoop = 0; iLoop < PICTURE_BITMAP_PICTURE_INFO_CNT; iLoop++)
+    {
+        if (-1 != sg_pBitmapPictureInfoWidth[iLoop])
+        {
+            pInfoRightPos += sg_pBitmapPictureInfoWidth[iLoop];
+            pInfoParts[iLoop] = pInfoRightPos;
+        }
+        else { pInfoParts[iLoop] = -1; }
+    }
+    SendMessage(bmInfo->hPictureInfo, SB_SETPARTS, PICTURE_BITMAP_PICTURE_INFO_CNT, (LPARAM)pInfoParts);
 }
 static void BitmapProcess(PPICTUREBITMAPWNDEXTRA bmInfo)
 {
@@ -401,6 +445,17 @@ static void GetBitmapShowSize(PPICTUREBITMAPWNDEXTRA bmInfo, HANINT* pW, HANINT*
     
     *pH = PICTURE_BITMAP_INFO_HEIGHT;
     *pW = (HANINT)((HANDOUBLE)(*pH) / pxHeight * pxWidth);
+}
+static void UpdateBitmapPictureInfo(PPICTUREBITMAPWNDEXTRA bmInfo)
+{
+    PPICTURERESOLUTION pResolution = &(bmInfo->pictureData.pPictureInfo->pPicture[0]->pxResolution);
+    HANCHAR pText[HAN_PICTURE_BITMAP_TEXT_BUF_SIZE];
+
+    HAN_strncpy(pText, TEXT("位图"), HAN_PICTURE_BITMAP_TEXT_BUF_SIZE);
+    SendMessage(bmInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_BITMAP_PICTURE_INFO_MAIN, SBT_NOBORDERS), (LPARAM)pText);
+
+    HAN_snprintf(pText, HAN_PICTURE_BITMAP_TEXT_BUF_SIZE, TEXT("%u×%u"), pResolution->pxWidth, pResolution->pxHeight);
+    SendMessage(bmInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_BITMAP_PICTURE_INFO_SIZE, SBT_NOBORDERS), (LPARAM)pText);
 }
 
 static BOOL DecodeBitmap(PPICTUREBITMAPWNDEXTRA bmInfo)

@@ -18,6 +18,8 @@ BOOL PictureEditToolSetPaintId(HWND hEditTool, HANSIZE nId, BOOL bRedraw);
 
 HANSIZE PictureEditToolGetPaintId(HWND hEditTool);
 
+void PictureEditToolSetPixelInfo(HWND hEditTool, HANPSTR pPixelInfo);
+
 #ifdef __cplusplus
 }
 #endif

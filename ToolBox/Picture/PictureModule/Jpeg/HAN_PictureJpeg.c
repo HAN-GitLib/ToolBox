@@ -40,6 +40,13 @@ typedef enum {
 } PICTUREJPEGSEGMENTLISTHEADER;
 
 typedef enum {
+    PICTURE_JPEG_PICTURE_INFO_MAIN,
+    PICTURE_JPEG_PICTURE_INFO_SIZE,
+    PICTURE_JPEG_PICTURE_INFO_PIXEL,
+    PICTURE_JPEG_PICTURE_INFO_CNT,
+} PICTUREJPEGPICTUREINFO;
+
+typedef enum {
     PICTURE_JPEG_SEGMENT_TYPE_SOI,
     PICTURE_JPEG_SEGMENT_TYPE_APPn,
     PICTURE_JPEG_SEGMENT_TYPE_COM,
@@ -81,6 +88,7 @@ typedef struct tagPICTUREJPEGWNDEXTRA {
     HWND                            hSelf;
     HWND                            hShow;
     HWND                            hEditTool;
+    HWND                            hPictureInfo;
     HBRUSH                          hBackground;
     PICTURECREATEPARAM              paramPicture;
     struct {
@@ -253,6 +261,7 @@ static BOOL NotifyCallback(PPICTUREJPEGWNDEXTRA jpegInfo, NMHDR* pNotify);
 static void DestroyCallback(PPICTUREJPEGWNDEXTRA jpegInfo);
 static LRESULT GetSaveParamCallback(PPICTUREJPEGWNDEXTRA jpegInfo, PPICTURESAVEPARAM pSaveParam);
 static void InitJpegSegmentWindow(PPICTUREJPEGWNDEXTRA jpegInfo);
+static void SetJpegPictureInfoParts(PPICTUREJPEGWNDEXTRA jpegInfo);
 static HANINT JpegProcess(PPICTUREJPEGWNDEXTRA jpegInfo);
 static PPICTUREJPEGWNDEXTRA ReallocJpegInfoMemory(PPICTUREJPEGWNDEXTRA jpegInfo);
 static HANSIZE GetMCUInfoSize(PPICTUREJPEGWNDEXTRA jpegInfo);
@@ -260,6 +269,7 @@ static void InitMCUInfoMap(PPICTUREJPEGWNDEXTRA jpegInfo, uint8_t* pBuf);
 static HANSIZE ReadJpegSegment(const uint8_t* pData, HANSIZE nLen, PPICTUREJPEGSEGMENT pSegment);
 static HANSIZE GetNextSegmentPos(const uint8_t* pData, HANSIZE nLen);
 static void GetJpegShowSize(PPICTUREJPEGWNDEXTRA jpegInfo, HANINT* pW, HANINT* pH);
+static void UpdateJpegPictureInfo(PPICTUREJPEGWNDEXTRA jpegInfo);
 static void SetSegmentMap(const uint8_t* pData, HANINT nSegmentCnt, PPICTUREJPEGWNDEXTRA jpegInfo);
 static void CreateWarningWindow(PPICTUREJPEGWNDEXTRA jpegInfo);
 static void MCUViewCallback(PPICTUREJPEGWNDEXTRA jpegInfo);
@@ -428,6 +438,11 @@ static const HANINT sg_pJpegSegmentInfoHeaderWidth[PICTURE_JPEG_SEGMENT_INFO_HEA
     [PICTURE_JPEG_SEGMENT_INFO_HEADER_FIELD] = 180,
     [PICTURE_JPEG_SEGMENT_INFO_HEADER_VALUE] = 300,
 };
+static const HANINT sg_pJpegPictureInfoWidth[PICTURE_JPEG_PICTURE_INFO_CNT] = {
+    [PICTURE_JPEG_PICTURE_INFO_MAIN] = 300,
+    [PICTURE_JPEG_PICTURE_INFO_SIZE] = 200,
+    [PICTURE_JPEG_PICTURE_INFO_PIXEL] = -1,
+};
 static const PICTUREJPEGSEGMENTTYPEINFO sg_pJpegSegmentType[PICTURE_JPEG_SEGMENT_TYPE_CNT] = {
     [PICTURE_JPEG_SEGMENT_TYPE_SOI] = {
         .ReadSegment = ReadJpegSegment_SOI,
@@ -479,6 +494,11 @@ static const PICTUREJPEGSEGMENTTYPEINFO sg_pJpegSegmentType[PICTURE_JPEG_SEGMENT
         .SetSegmentMap = SetSegmentMap_SOI_EOI,
         .UpdateSegmentInfoWindow = UpdateSegmentInfoWindow_EOI,
     },
+};
+static const HANPCSTR sg_pJpegTypeName[PICTURE_JPEG_TYPE_CNT] = {
+    [PICTURE_JPEG_TYPE_UNKNOWN] = TEXT("未知"),
+    [PICTURE_JPEG_TYPE_BASELINE] = TEXT("基线"),
+    [PICTURE_JPEG_TYPE_PROGRESSIVE] = TEXT("渐进"),
 };
 static const HANPCSTR sg_pDHTTableType[PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_CNT] = {
     [PICTURE_JPEG_SEGMENT_DHT_TABLE_TYPE_DC] = TEXT("DC表"),
@@ -630,6 +650,9 @@ static LRESULT CALLBACK PictureJpegWndProc(HWND hPictureJpeg, UINT message, WPAR
         case PCTM_ZOOM: {
             (void)SendMessage(jpegInfo->hEditTool, message, wParam, lParam);
         } break;
+        case PCTM_SETPIXELINFO: {
+            SendMessage(jpegInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_JPEG_PICTURE_INFO_PIXEL, SBT_NOBORDERS), lParam);
+        } break;
 
         default: {
             lWndProcRet = DefWindowProc(hPictureJpeg, message, wParam, lParam);
@@ -702,6 +725,11 @@ static LRESULT CreateCallback(HWND hPictureJpeg, LPARAM lParam)
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
             nWinX, nWinY, nWinW, nWinH,
             hPictureJpeg, (HMENU)WID_PICTURE_JPEG_SEGMENT_INFO, hInst, NULL);
+            
+        jpegInfo->hPictureInfo = CreateWindow(STATUSCLASSNAME, NULL,
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hPictureJpeg, (HMENU)WID_PICTURE_PICTURE_STATUS_BAR, hInst, NULL);
 
         SendMessage(jpegInfo->mcuView.hButton, WM_SETFONT, (WPARAM)(jpegInfo->hFont.hSys), (LPARAM)TRUE);
         SendMessage(jpegInfo->segment.hList, WM_SETFONT, (WPARAM)(jpegInfo->hFont.hHex), (LPARAM)TRUE);
@@ -711,6 +739,7 @@ static LRESULT CreateCallback(HWND hPictureJpeg, LPARAM lParam)
         ListView_SetExtendedListViewStyle(jpegInfo->segment.hInfo, LVS_EX_FULLROWSELECT);
         
         InitJpegSegmentWindow(jpegInfo);
+        SetJpegPictureInfoParts(jpegInfo);
     }
     /* 解码文件的数据段，填充信息 */
     if (-1 != lWndProcRet)
@@ -738,6 +767,7 @@ static LRESULT CreateCallback(HWND hPictureJpeg, LPARAM lParam)
 
         SetSegmentMap(pPictureCreateParam->pData, nSegmentCnt, jpegInfo);
         bDecodeRet = DecodeSOS(jpegInfo);
+        UpdateJpegPictureInfo(jpegInfo);
 
         if (FALSE == bDecodeRet) { CreateWarningWindow(jpegInfo); }
         
@@ -768,10 +798,13 @@ static void SizeCallback(HWND hPictureJpeg, PPICTUREJPEGWNDEXTRA jpegInfo)
     HANINT nWinW;
     HANINT nWinH;
     RECT rcClientSize;
-    
+    RECT rcPictureInfo;
+
+    SendMessage(jpegInfo->hPictureInfo, WM_SIZE, 0, 0);
+    GetClientRect(jpegInfo->hPictureInfo, &rcPictureInfo);
     GetClientRect(hPictureJpeg, &rcClientSize);
     nWinW = GetRectW(&rcClientSize) - (PICTURE_WINDOW_DY * 2);
-    nWinH = GetRectH(&rcClientSize) - nWinY - PICTURE_WINDOW_DY;
+    nWinH = GetRectH(&rcClientSize) - GetRectH(&rcPictureInfo) - nWinY - PICTURE_WINDOW_DY;
 
     MoveWindow(jpegInfo->hEditTool, nWinX, nWinY, nWinW, nWinH, TRUE);
 }
@@ -841,6 +874,22 @@ static void InitJpegSegmentWindow(PPICTUREJPEGWNDEXTRA jpegInfo)
         lvTitle.fmt = LVCFMT_LEFT;
         ListView_InsertColumn(jpegInfo->segment.hInfo, iLoop, &lvTitle);
     }
+}
+static void SetJpegPictureInfoParts(PPICTUREJPEGWNDEXTRA jpegInfo)
+{
+    HANINT pInfoRightPos = 0;
+    HANINT pInfoParts[PICTURE_JPEG_PICTURE_INFO_CNT];
+
+    for (PICTUREJPEGPICTUREINFO iLoop = 0; iLoop < PICTURE_JPEG_PICTURE_INFO_CNT; iLoop++)
+    {
+        if (-1 != sg_pJpegPictureInfoWidth[iLoop])
+        {
+            pInfoRightPos += sg_pJpegPictureInfoWidth[iLoop];
+            pInfoParts[iLoop] = pInfoRightPos;
+        }
+        else { pInfoParts[iLoop] = -1; }
+    }
+    SendMessage(jpegInfo->hPictureInfo, SB_SETPARTS, PICTURE_JPEG_PICTURE_INFO_CNT, (LPARAM)pInfoParts);
 }
 static HANINT JpegProcess(PPICTUREJPEGWNDEXTRA jpegInfo)
 {
@@ -1074,6 +1123,17 @@ static void GetJpegShowSize(PPICTUREJPEGWNDEXTRA jpegInfo, HANINT* pW, HANINT* p
     
     *pH = PICTURE_JPEG_INFO_HEIGHT;
     *pW = (HANINT)((HANDOUBLE)(*pH) / pxHeight * pxWidth);
+}
+static void UpdateJpegPictureInfo(PPICTUREJPEGWNDEXTRA jpegInfo)
+{
+    PPICTURERESOLUTION pResolution = &(jpegInfo->pictureData.pPictureInfo->pPicture[0]->pxResolution);
+    HANCHAR pText[HAN_PICTURE_JPEG_TEXT_BUF_SIZE];
+
+    HAN_snprintf(pText, HAN_PICTURE_JPEG_TEXT_BUF_SIZE, TEXT("JPEG（%s）"), sg_pJpegTypeName[jpegInfo->segment.segmentInfo.eType]);
+    SendMessage(jpegInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_JPEG_PICTURE_INFO_MAIN, SBT_NOBORDERS), (LPARAM)pText);
+
+    HAN_snprintf(pText, HAN_PICTURE_JPEG_TEXT_BUF_SIZE, TEXT("%u×%u"), pResolution->pxWidth, pResolution->pxHeight);
+    SendMessage(jpegInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_JPEG_PICTURE_INFO_SIZE, SBT_NOBORDERS), (LPARAM)pText);
 }
 static void SetSegmentMap(const uint8_t* pData, HANINT nSegmentCnt, PPICTUREJPEGWNDEXTRA jpegInfo)
 {
@@ -1477,13 +1537,13 @@ static void JpegSaveParamCreateTypeWindows(PPICTUREJPEGSAVEPARAM pSaveParam)
     HANINT nWinW = PICTURE_JPEG_SAVE_PARAM_RADIO_BUTTON_WIDTH;
     HANINT nWinH = PICTURE_JPEG_SAVE_PARAM_RADIO_BUTTON_HEIGHT;
 
-    pSaveParam->hType.hBaseline = CreateWindow(TEXT("button"), TEXT("基线"),
+    pSaveParam->hType.hBaseline = CreateWindow(TEXT("button"), sg_pJpegTypeName[PICTURE_JPEG_TYPE_BASELINE],
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         nWinX, nWinY, nWinW, nWinH,
         pSaveParam->hType.hTitle, (HMENU)WID_PICTURE_JPEG_SAVE_PARAM_TYPE_BASELINE, hInst, NULL
     );
     nWinY += PICTURE_JPEG_SAVE_PARAM_RADIO_BUTTON_HEIGHT;
-    pSaveParam->hType.hProgressive = CreateWindow(TEXT("button"), TEXT("渐进"),
+    pSaveParam->hType.hProgressive = CreateWindow(TEXT("button"), sg_pJpegTypeName[PICTURE_JPEG_TYPE_PROGRESSIVE],
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         nWinX, nWinY, nWinW, nWinH,
         pSaveParam->hType.hTitle, (HMENU)WID_PICTURE_JPEG_SAVE_PARAM_TYPE_PROGRESSIVE, hInst, NULL

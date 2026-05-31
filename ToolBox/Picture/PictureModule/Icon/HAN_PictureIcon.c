@@ -26,6 +26,13 @@ typedef enum {
     PICTURE_ICON_ALPHA_MODE_CNT,
 } PICTUREICONALPHAMODE;
 
+typedef enum {
+    PICTURE_ICON_PICTURE_INFO_MAIN,
+    PICTURE_ICON_PICTURE_INFO_SIZE,
+    PICTURE_ICON_PICTURE_INFO_PIXEL,
+    PICTURE_ICON_PICTURE_INFO_CNT,
+} PICTUREICONPICTUREINFO;
+
 typedef struct tagPICTUREICONBITMAPINFO {
     BITMAP                      bmBitmap;
     PICTUREBITMAPINFO           bmInfo;
@@ -38,6 +45,7 @@ typedef struct tagPICTUREICONEXTRA {
     HWND                        hSelf;
     HWND                        hInfo;  
     HWND                        hEditTool;
+    HWND                        hPictureInfo;
     struct {
         HWND                    hIconList;
         HIMAGELIST              imageList;
@@ -65,6 +73,7 @@ static void DestroyCallback(PPICTUREICONEXTRA iconInfo);
 static LRESULT GetSaveParamCallback(PPICTUREICONEXTRA iconInfo, PPICTURESAVEPARAM pSaveParam);
 static void InitIconList(HWND hIconList);
 static void InitIconInfo(HWND hIconInfo);
+static void SetIconPictureInfoParts(PPICTUREICONEXTRA iconInfo);
 static void LoadIconToImageList(PPICTUREICONEXTRA iconInfo, HANPCSTR pFileName);
 static PPICTUREICONEXTRA ReallocIconInfoMemory(PPICTUREICONEXTRA iconInfo);
 static SIZE_T GetIconsPictureMemSize(PPICTUREICONEXTRA iconInfo, PPICTURERESOLUTION pResolution);
@@ -86,6 +95,11 @@ static const HANPSTR sg_pIconInfoKeyName[PICTURE_ICON_KEY_CNT] = {
     [PICTURE_ICON_KEY_ROW_BYTES] = TEXT("每行字节数"),
     [PICTURE_ICON_KEY_PLANES] = TEXT("平面数"),
     [PICTURE_ICON_KEY_ALPHA_MODE] = TEXT("Alpha通道模式"),
+};
+static const HANINT sg_pIconPictureInfoWidth[PICTURE_ICON_PICTURE_INFO_CNT] = {
+    [PICTURE_ICON_PICTURE_INFO_MAIN] = 300,
+    [PICTURE_ICON_PICTURE_INFO_SIZE] = 200,
+    [PICTURE_ICON_PICTURE_INFO_PIXEL] = -1,
 };
 
 BOOL CheckPathHaveIcons(HINSTANCE hInst, HANPCSTR pPath)
@@ -145,6 +159,9 @@ static LRESULT CALLBACK PictureIconWndProc(HWND hPictureIcon, UINT message, WPAR
         } break;
         case PCTM_ZOOM: {
             (void)SendMessage(iconInfo->hEditTool, message, wParam, lParam);
+        } break;
+        case PCTM_SETPIXELINFO: {
+            SendMessage(iconInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_ICON_PICTURE_INFO_PIXEL, SBT_NOBORDERS), lParam);
         } break;
 
         default: {
@@ -214,6 +231,11 @@ static LRESULT CreateCallback(HWND hPictureIcon, LPARAM lParam)
             nWinX, nWinY, nWinW, nWinH,
             hPictureIcon, (HMENU)WID_PICTURE_ICON_LIST, hInst, NULL
         );
+            
+        iconInfo->hPictureInfo = CreateWindow(STATUSCLASSNAME, NULL,
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0,
+            hPictureIcon, (HMENU)WID_PICTURE_PICTURE_STATUS_BAR, hInst, NULL);
 
         SendMessage(iconInfo->iconList.hIconList, WM_SETFONT, (WPARAM)(iconInfo->hFont.hSys), (LPARAM)TRUE);
         SendMessage(iconInfo->hInfo, WM_SETFONT, (WPARAM)(iconInfo->hFont.hSys), (LPARAM)TRUE);
@@ -221,6 +243,7 @@ static LRESULT CreateCallback(HWND hPictureIcon, LPARAM lParam)
         InitIconList(iconInfo->iconList.hIconList);
         LoadIconToImageList(iconInfo, pPictureCreateParam->pFileName);
         InitIconInfo(iconInfo->hInfo);
+        SetIconPictureInfoParts(iconInfo);
     }
     /* 重新分配 iconInfo 内存 */
     if (-1 != lWndProcRet)
@@ -257,10 +280,13 @@ static void SizeCallback(HWND hPictureIcon, PPICTUREICONEXTRA iconInfo)
     HANINT nWinW;
     HANINT nWinH;
     RECT rcClientSize;
+    RECT rcPictureInfo;
     
+    SendMessage(iconInfo->hPictureInfo, WM_SIZE, 0, 0);
+    GetClientRect(iconInfo->hPictureInfo, &rcPictureInfo);
     GetClientRect(hPictureIcon, &rcClientSize);
     nWinW = GetRectW(&rcClientSize) - (PICTURE_WINDOW_DY * 2);
-    nWinH = GetRectH(&rcClientSize) - nWinY - PICTURE_WINDOW_DY;
+    nWinH = GetRectH(&rcClientSize) - GetRectH(&rcPictureInfo) - nWinY - PICTURE_WINDOW_DY;
 
     MoveWindow(iconInfo->hEditTool, nWinX, nWinY, nWinW, nWinH, TRUE);
 }
@@ -328,6 +354,22 @@ static void InitIconInfo(HWND hIconInfo)
         lvItem.pszText = sg_pIconInfoKeyName[iLoop];
         ListView_InsertItem(hIconInfo, &lvItem);
     }
+}
+static void SetIconPictureInfoParts(PPICTUREICONEXTRA iconInfo)
+{
+    HANINT pInfoRightPos = 0;
+    HANINT pInfoParts[PICTURE_ICON_PICTURE_INFO_CNT];
+
+    for (PICTUREICONPICTUREINFO iLoop = 0; iLoop < PICTURE_ICON_PICTURE_INFO_CNT; iLoop++)
+    {
+        if (-1 != sg_pIconPictureInfoWidth[iLoop])
+        {
+            pInfoRightPos += sg_pIconPictureInfoWidth[iLoop];
+            pInfoParts[iLoop] = pInfoRightPos;
+        }
+        else { pInfoParts[iLoop] = -1; }
+    }
+    SendMessage(iconInfo->hPictureInfo, SB_SETPARTS, PICTURE_ICON_PICTURE_INFO_CNT, (LPARAM)pInfoParts);
 }
 static void LoadIconToImageList(PPICTUREICONEXTRA iconInfo, HANPCSTR pFileName)
 {
@@ -555,11 +597,12 @@ static void UpdateIconInfo(PPICTUREICONEXTRA iconInfo)
         .iSubItem = 1,
         .pszText = pText,
     };
+    HANINT nIconCnt = iconInfo->iconList.nIconCnt;
     HANINT nCursel = iconInfo->iconList.nCursel;
     PPICTUREICONBITMAPINFO pIconBitmapInfo = &(iconInfo->pictureData.pIconBitmapInfo[nCursel]);
-
+    /* 上方信息列表 */
     lvItem.iItem = PICTURE_ICON_KEY_TOTAL;
-    HAN_snprintf(pText, ArrLen(pText), TEXT("%d"), iconInfo->iconList.nIconCnt);
+    HAN_snprintf(pText, ArrLen(pText), TEXT("%d"), nIconCnt);
     ListView_SetItem(hInfo, &lvItem);
 
     lvItem.iItem = PICTURE_ICON_KEY_ID;
@@ -586,6 +629,13 @@ static void UpdateIconInfo(PPICTUREICONEXTRA iconInfo)
     lvItem.iItem = PICTURE_ICON_KEY_ALPHA_MODE;
     HAN_snprintf(pText, ArrLen(pText), TEXT("%s"), sg_pAlphaModeName[pIconBitmapInfo->eAlpha]);
     ListView_SetItem(hInfo, &lvItem);
+
+    /* 底部状态栏 */
+    HAN_snprintf(pText, HAN_PICTURE_ICON_TEXT_BUF_SIZE, TEXT("图标（%d/%d）"), nCursel + 1, iconInfo->iconList.nIconCnt);
+    SendMessage(iconInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_ICON_PICTURE_INFO_MAIN, SBT_NOBORDERS), (LPARAM)pText);
+
+    HAN_snprintf(pText, HAN_PICTURE_ICON_TEXT_BUF_SIZE, TEXT("%ld×%ld"), pIconBitmapInfo->bmBitmap.bmWidth, pIconBitmapInfo->bmBitmap.bmHeight);
+    SendMessage(iconInfo->hPictureInfo, SB_SETTEXT, (WPARAM)MAKEWORD(PICTURE_ICON_PICTURE_INFO_SIZE, SBT_NOBORDERS), (LPARAM)pText);
 }
 static LRESULT IconListNotifyCallback(PPICTUREICONEXTRA iconInfo, NMHDR* pNotify)
 {
