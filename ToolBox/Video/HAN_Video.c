@@ -6,6 +6,8 @@
 #include "HAN_VideoDef.h"
 #include "VideoModule\MP4\HAN_VideoMP4.h"
 
+#define VIDEO_READ_FILE_BLOCK_MAX_SIZE          (HANSIZE)0xF0000000
+
 typedef enum {
     VIDEO_TOOLBAR_BUTTON_OPEN_VIDEO,
     VIDEO_TOOLBAR_BUTTON_PROCESS_FRAME,
@@ -351,19 +353,32 @@ static BOOL ReadVideoFile(HANPSTR pFileName, PVIDEOWNDEXTRA vdInfo, PVIDEOCREATE
 {
     BOOL bRet = FALSE;
     HANDLE hFile = CreateFile(pFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    LARGE_INTEGER liSize;
     HANSIZE nFileSize;
+    HANSIZE nReadSize;
+    DWORD nReadLen;
 
     if (INVALID_HANDLE_VALUE != hFile)
     {
-        nFileSize = (HANSIZE)GetFileSize(hFile, NULL);
+        liSize.LowPart = GetFileSize(hFile, (PDWORD)&(liSize.HighPart));
+        nFileSize = liSize.QuadPart;
         pCreateParam->pData = (uint8_t*)HANWinHeapAlloc(vdInfo->hHeap, NULL, nFileSize);
         if (NULL != pCreateParam->pData)
         {
-            if (TRUE == ReadFile(hFile, pCreateParam->pData, (DWORD)nFileSize, NULL, NULL))
+            bRet = TRUE;
+            nReadSize = 0;
+            while (nReadSize < nFileSize)
+            {
+                if ((nFileSize - nReadSize) < VIDEO_READ_FILE_BLOCK_MAX_SIZE) { nReadLen = (DWORD)(nFileSize - nReadSize); }
+                else { nReadLen = VIDEO_READ_FILE_BLOCK_MAX_SIZE; }
+                bRet = ReadFile(hFile, &(pCreateParam->pData[nReadSize]), nReadLen, NULL, NULL);
+                nReadSize += nReadLen;
+                if (FALSE == bRet) { break; }
+            }
+            if (TRUE == bRet)
             {
                 HAN_strcpy(pCreateParam->pFileName, pFileName);
                 pCreateParam->nLen = nFileSize;
-                bRet = TRUE;
             }
         }
         CloseHandle(hFile);

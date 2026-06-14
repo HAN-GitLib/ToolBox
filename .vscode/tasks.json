@@ -48,6 +48,7 @@
                 "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Picture\\PictureModule\\Jpeg\\APP\\APP14\\Adobe\\*.c",
                 "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Video\\*.c",
                 "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Video\\VideoModule\\MP4\\*.c",
+                "D:\\HAN\\Files\\vscode_program\\ToolBox\\ToolBox\\Video\\VideoModule\\H264\\*.c",
                 "-lgdi32",
                 "-lcomdlg32",
                 "-lcomctl32",

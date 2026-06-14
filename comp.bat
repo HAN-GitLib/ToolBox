@@ -41,6 +41,7 @@ ToolBox\Picture\PictureModule\Jpeg\APP\APP13\Photoshop\*.c ^
 ToolBox\Picture\PictureModule\Jpeg\APP\APP14\Adobe\*.c ^
 ToolBox\Video\*.c ^
 ToolBox\Video\VideoModule\MP4\*.c ^
+ToolBox\Video\VideoModule\H264\*.c ^
 -lgdi32 ^
 -lcomdlg32 ^
 -lcomctl32 ^

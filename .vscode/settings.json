@@ -99,6 +99,7 @@
         "han_video.h": "c",
         "han_videomp4.h": "c",
         "HAN_VideoMP4Box.C": "cpp",
-        "inttypes.h": "c"
+        "inttypes.h": "c",
+        "han_videoh264": "c"
     }
 }

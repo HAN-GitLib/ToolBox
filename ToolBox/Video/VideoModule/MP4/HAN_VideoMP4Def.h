@@ -14,6 +14,8 @@ extern "C" {
 
 #define HAN_VIDEO_MP4_BOX_TREE_W                    200
 
+#define HAN_VIDEO_MP4_BOX_ENTRIES_INFO_MAX_CNT      30
+
 #ifdef __cplusplus
 }
 #endif

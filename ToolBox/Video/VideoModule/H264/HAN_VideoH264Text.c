@@ -1,0 +1,129 @@
+#include "HAN_VideoH264Text.h"
+
+#if 1 /******************** SPS ********************/
+static const HANPSTR sg_pH264_SPS_Name = TEXT("解码器配置信息");
+static const HANPSTR sg_pBoxFieldName_SPS[VIDEO_H264_SPS_FIELD_CNT] = {
+    [VIDEO_H264_SPS_FIELD_PROFILE_IDC] = TEXT("配置文件标识"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET0] = TEXT("约束标志0"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET1] = TEXT("约束标志1"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET2] = TEXT("约束标志2"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET3] = TEXT("约束标志3"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET4] = TEXT("约束标志4"),
+    [VIDEO_H264_SPS_FIELD_CONSTRAINT_SET5] = TEXT("约束标志5"),
+    [VIDEO_H264_SPS_FIELD_LEVEL_IDC] = TEXT("编码等级"),
+    [VIDEO_H264_SPS_FIELD_SPS_ID] = TEXT("配置参数集ID"),
+    [VIDEO_H264_SPS_FIELD_CHROMA_FORMAT] = TEXT("色度抽样率"),
+    [VIDEO_H264_SPS_FIELD_SEPARATE_COLOUR_PLANE] = TEXT("色彩平面分离"),
+    [VIDEO_H264_SPS_FIELD_LUMA_BIT_DEPTH] = TEXT("亮度位深"),
+    [VIDEO_H264_SPS_FIELD_LUMA_QUANTIZATION_PARAMETER_RANGE_OFFSET] = TEXT("亮度量化参数偏移量"),
+    [VIDEO_H264_SPS_FIELD_CHROMA_BIT_DEPTH] = TEXT("色度位深"),
+    [VIDEO_H264_SPS_FIELD_CHROMA_QUANTIZATION_PARAMETER_RANGE_OFFSET] = TEXT("色度量化参数偏移量"),
+    [VIDEO_H264_SPS_FIELD_TRANSFORM_BYPASS] = TEXT("QP旁路变换（无损编码）"),
+    [VIDEO_H264_SPS_FIELD_MAX_FRAME_NUM] = TEXT("最大帧序号"),
+    [VIDEO_H264_SPS_FIELD_POC_TYPE] = TEXT("图像序号（POC）类型"),
+    [VIDEO_H264_SPS_FIELD_POC0_MAX_PIC_ORDER_CNT_LSB] = TEXT("POC低位比特数"),
+    [VIDEO_H264_SPS_FIELD_POC1_DELTA_PIC_ORDER_ALWAYSZ_ERO] = TEXT("增量图像序号恒为零"),
+    [VIDEO_H264_SPS_FIELD_POC1_NON_REF_PIC_OFFSET] = TEXT("非参考帧偏移"),
+    [VIDEO_H264_SPS_FIELD_POC1_TOP_TO_BOTTOM_FIELD_OFFSET] = TEXT("顶底场偏移"),
+    [VIDEO_H264_SPS_FIELD_POC1_REF_FRAMES_NUM] = TEXT("POC周期内参考帧数量"),
+    [VIDEO_H264_SPS_FIELD_POC1_REF_FRAME_OFFSET] = TEXT("参考帧偏移"),
+    [VIDEO_H264_SPS_FIELD_MAX_NUM_REF_FRAMES] = TEXT("最大参考帧数量"),
+    [VIDEO_H264_SPS_FIELD_GAPS_IN_FRAME_ALLOWED] = TEXT("是否允许帧间隙"),
+    [VIDEO_H264_SPS_FIELD_WIDTH] = TEXT("宽度"),
+    [VIDEO_H264_SPS_FIELD_HEIGHT] = TEXT("高度"),
+    [VIDEO_H264_SPS_FIELD_ADAPTIVE_FRAME_FIELD] = TEXT("是否自适应帧场"),
+    [VIDEO_H264_SPS_FIELD_DIRECT_8X8_INFERENCE] = TEXT("是否使用 8x8 运动矢量推断"),
+    [VIDEO_H264_SPS_FIELD_FRAME_CROP_LEFT_OFFSET] = TEXT("左侧裁剪量"),
+    [VIDEO_H264_SPS_FIELD_FRAME_CROP_RIGHT_OFFSET] = TEXT("右侧裁剪量"),
+    [VIDEO_H264_SPS_FIELD_FRAME_CROP_TOP_OFFSET] = TEXT("顶部裁剪量"),
+    [VIDEO_H264_SPS_FIELD_FRAME_CROP_BOTTOM_OFFSET] = TEXT("底部裁剪量"),
+};
+static const HANPSTR sg_pH264_SPS_ProfileIdcName[VIDEO_H264_PROFILE_TYPE_CNT + 1] = {
+    [VIDEO_H264_PROFILE_TYPE_BASELINE] = TEXT("Baseline"),
+    [VIDEO_H264_PROFILE_TYPE_CONSTRAINED_BASELINE] = TEXT("Constrained Baseline"),
+    [VIDEO_H264_PROFILE_TYPE_MAIN] = TEXT("Main"),
+    [VIDEO_H264_PROFILE_TYPE_EXTENDED] = TEXT("Extended"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH] = TEXT("High"),
+    [VIDEO_H264_PROFILE_TYPE_PROGRESSIVE_HIGH] = TEXT("Progressive High"),
+    [VIDEO_H264_PROFILE_TYPE_CONSTRAINED_HIGH] = TEXT("Constrained High"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_10] = TEXT("High 10"),
+    [VIDEO_H264_PROFILE_TYPE_PROGRESSIVE_HIGH_10] = TEXT("Progressive High 10"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_422] = TEXT("High 4:2:2"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_444_PREDICTIVE] = TEXT("High 4:4:4 Predictive"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_10_INTRA] = TEXT("High 10 Intra"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_422_INTRA] = TEXT("High 4:2:2 Intra"),
+    [VIDEO_H264_PROFILE_TYPE_HIGH_444_INTRA] = TEXT("High 4:4:4 Intra"),
+    [VIDEO_H264_PROFILE_TYPE_CAVLC_444_INTRA] = TEXT("CAVLC 4:4:4 Intra"),
+    [VIDEO_H264_PROFILE_TYPE_CNT] = TEXT("未知格式"),
+};
+static const HANPSTR sg_pH264_SPS_ChromaFormatName[5] = {
+    [0] = TEXT("单色"),
+    [1] = TEXT("4:2:0"),
+    [2] = TEXT("4:2:2"),
+    [3] = TEXT("4:4:4"),
+    [4] = TEXT("未知抽样格式"),
+};
+
+HANPSTR GetH264_SPS_Name(void)
+{
+    return sg_pH264_SPS_Name;
+}
+HANPSTR GetH264_SPS_FieldName(VIDEOH264FIELDSPS eName)
+{
+    return sg_pBoxFieldName_SPS[eName];
+}
+HANPSTR GetH264_SPS_ProfileIdcName(VIDEOH264PROFILETYPE eProfileType)
+{
+    return sg_pH264_SPS_ProfileIdcName[eProfileType];
+}
+HANPSTR GetH264_SPS_ChromaFormatName(uint8_t nChroma)
+{
+    HANPSTR pRet;
+
+    switch (nChroma) {
+        case 0: { pRet = sg_pH264_SPS_ChromaFormatName[0]; } break;
+        case 1: { pRet = sg_pH264_SPS_ChromaFormatName[1]; } break;
+        case 2: { pRet = sg_pH264_SPS_ChromaFormatName[2]; } break;
+        case 3: { pRet = sg_pH264_SPS_ChromaFormatName[3]; } break;
+        default: { pRet = sg_pH264_SPS_ChromaFormatName[4]; } break;
+    }
+
+    return pRet;
+}
+#endif
+
+#if 1 /******************** VUI Param ********************/
+static const HANPSTR sg_pH264_vuiParam_Name = TEXT("视频可用性信息");
+static const HANPSTR sg_pBoxFieldName_vuiParam[VIDEO_H264_VUI_PARAM_FIELD_CNT] = {
+    [VIDEO_H264_VUI_PARAM_FIELD_ASPECT_RATIO] = TEXT("像素宽高比"),
+    [VIDEO_H264_VUI_PARAM_FIELD_OVERSCAN] = TEXT("过扫描"),
+    [VIDEO_H264_VUI_PARAM_FIELD_VIDEO_FORMAT] = TEXT("视频格式"),
+    [VIDEO_H264_VUI_PARAM_FIELD_VIDEO_FULL_RANGE] = TEXT("视频信号全范围"),
+    [VIDEO_H264_VUI_PARAM_FIELD_COLOUR_PRIMARIES] = TEXT("CIE 1931坐标"),
+    [VIDEO_H264_VUI_PARAM_FIELD_TRANSFER_CHARACTERISTICS] = TEXT("光电传输特性"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MATRIX_COEFFICIENTS] = TEXT("色彩转换矩阵系数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_CHROMA_LOC_TOP] = TEXT("顶部色度采样位置"),
+    [VIDEO_H264_VUI_PARAM_FIELD_CHROMA_LOC_BOTTOM] = TEXT("底部色度采样位置"),
+    [VIDEO_H264_VUI_PARAM_FIELD_NUM_UNITS_IN_TICK] = TEXT("每tick时间单元数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_TIME_SCALE] = TEXT("每秒时间单元数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_FIXED_FRAME_RATE] = TEXT("固定帧率"),
+    [VIDEO_H264_VUI_PARAM_FIELD_LOW_DELAY_HRD] = TEXT("低延迟HRD模式"),
+    [VIDEO_H264_VUI_PARAM_FIELD_PIC_STRUCT] = TEXT("图像时序SEI消息"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MOTION_VECTORS_OVER_PIC_BOUNDARIES] = TEXT("运动矢量跨越图像边界"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_BYTES_PER_PIC_DENOM] = TEXT("每图像最大字节除数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_BITS_PER_MB_DENOM] = TEXT("每宏块最大比特除数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_MV_LENGTH_H] = TEXT("最大水平运动矢量长度"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_MV_LENGTH_V] = TEXT("最大垂直运动矢量长度"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_NUM_REORDER_FRAMES] = TEXT("最大重排序帧数"),
+    [VIDEO_H264_VUI_PARAM_FIELD_MAX_DEC_FRAME_BUFFERING] = TEXT("最大解码帧缓冲"),
+};
+
+HANPSTR GetH264_VUIParam_Name(void)
+{
+    return sg_pH264_vuiParam_Name;
+}
+HANPSTR GetH264_VUIParam_FieldName(VIDEOH264FIELDVUIPARAM eName)
+{
+    return sg_pBoxFieldName_vuiParam[eName];
+}
+#endif

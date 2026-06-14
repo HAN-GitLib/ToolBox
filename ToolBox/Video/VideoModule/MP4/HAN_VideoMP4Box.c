@@ -1,5 +1,6 @@
 #include "HAN_VideoMP4Box.h"
 #include "HAN_VideoMP4Def.h"
+#include "..\H264\HAN_VideoH264.h"
 
 typedef enum {
     VIDEO_MP4_BOX_FIELD_BOX_VERSION_0,
@@ -94,9 +95,23 @@ HANPSTR GetMP4_mvhd_FieldName(VIDEOMP4BOXFIELD_mvhd eName)
 {
     return sg_pBoxFieldName_mvhd[eName];
 }
-HANPSTR GetMP4_mvhd_VersionName(uint8_t nVersion)
+#endif
+
+#if 1 /******************** iods ********************/
+static const HANPSTR sg_pMP4_iods_Name = TEXT("初始对象描述符");
+static const HANPSTR sg_pBoxFieldName_iods[VIDEO_MP4_iods_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_iods_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_iods_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_iods_BOX_FIELD_DATA] = TEXT("数据"),
+};
+
+HANPSTR GetMP4_iods_Name(void)
 {
-    return GetMP4BoxVersionName(nVersion);
+    return sg_pMP4_iods_Name;
+}
+HANPSTR GetMP4_iods_FieldName(VIDEOMP4BOXFIELD_iods eName)
+{
+    return sg_pBoxFieldName_iods[eName];
 }
 #endif
 
@@ -146,10 +161,6 @@ HANPSTR GetMP4_tkhd_Name(void)
 HANPSTR GetMP4_tkhd_FieldName(VIDEOMP4BOXFIELD_tkhd eName)
 {
     return sg_pBoxFieldName_tkhd[eName];
-}
-HANPSTR GetMP4_tkhd_VersionName(uint8_t nVersion)
-{
-    return GetMP4BoxVersionName(nVersion);
 }
 void GetMP4_tkhd_FlagsName(uint32_t cFlags, HANPSTR pText, HANSIZE nLen)
 {
@@ -243,10 +254,6 @@ HANPSTR GetMP4_mdhd_Name(void)
 HANPSTR GetMP4_mdhd_FieldName(VIDEOMP4BOXFIELD_mdhd eName)
 {
     return sg_pBoxFieldName_mdhd[eName];
-}
-HANPSTR GetMP4_mdhd_VersionName(uint8_t nVersion)
-{
-    return GetMP4BoxVersionName(nVersion);
 }
 #endif
 
@@ -422,7 +429,7 @@ HANPSTR GetMP4_stbl_Name(void)
 #endif
 
 #if 1 /******************** stsd ********************/
-static const HANPSTR sg_pMP4_stsd_Name = TEXT("样本索引表");
+static const HANPSTR sg_pMP4_stsd_Name = TEXT("样本描述");
 
 HANPSTR GetMP4_stsd_Name(void)
 {
@@ -466,7 +473,7 @@ static const HANPSTR sg_pBoxFieldName_avcC[VIDEO_MP4_avcC_BOX_FIELD_CNT] = {
     [VIDEO_MP4_avcC_BOX_FIELD_CONFIGURATION_VERSION] = TEXT("配置版本"),
     [VIDEO_MP4_avcC_BOX_FIELD_AVC_PROFILE_INDICATION] = TEXT("配置文件标识"),
     [VIDEO_MP4_avcC_BOX_FIELD_PROFILE_COMPATIBILITY] = TEXT("配置文件兼容性"),
-    [VIDEO_MP4_avcC_BOX_FIELD_AVC_LEVEL_INDICATION] = TEXT("级别标识"),
+    [VIDEO_MP4_avcC_BOX_FIELD_AVC_LEVEL_INDICATION] = TEXT("编码等级"),
     [VIDEO_MP4_avcC_BOX_FIELD_AVC_NALU_LENGTH_SIZE] = TEXT("NALU长度大小"),
     [VIDEO_MP4_avcC_BOX_FIELD_AVC_SPS] = TEXT("SPS条目"),
     [VIDEO_MP4_avcC_BOX_FIELD_AVC_PPS] = TEXT("PPS条目"),
@@ -479,5 +486,344 @@ HANPSTR GetMP4_avcC_Name(void)
 HANPSTR GetMP4_avcC_FieldName(VIDEOMP4BOXFIELD_avcC eName)
 {
     return sg_pBoxFieldName_avcC[eName];
+}
+HANPSTR GetMP4_avcC_ProfileIndicationName(uint8_t nProfileIndication)
+{
+    HANPSTR pRet;
+
+    switch (nProfileIndication) {
+        case 66: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_BASELINE); } break;
+        case 77: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_MAIN); } break;
+        case 88: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_EXTENDED); } break;
+        case 100: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_HIGH); } break;
+        case 110: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_HIGH_10); } break;
+        case 122: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_HIGH_422); } break;
+        case 244: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_HIGH_444_PREDICTIVE); } break;
+        case 44: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_CAVLC_444_INTRA); } break;
+        default: { pRet = GetH264_SPS_ProfileIdcName(VIDEO_H264_PROFILE_TYPE_CNT); } break;
+    }
+
+    return pRet;
+}
+#endif
+
+#if 1 /******************** pasp ********************/
+static const HANPSTR sg_pMP4_pasp_Name = TEXT("像素宽高比");
+static const HANPSTR sg_pBoxFieldName_pasp[VIDEO_MP4_pasp_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_pasp_BOX_FIELD_PIXEL_ASPECT_RATIO] = TEXT("像素宽高比"),
+};
+
+HANPSTR GetMP4_pasp_Name(void)
+{
+    return sg_pMP4_pasp_Name;
+}
+HANPSTR GetMP4_pasp_FieldName(VIDEOMP4BOXFIELD_pasp eName)
+{
+    return sg_pBoxFieldName_pasp[eName];
+}
+#endif
+
+#if 1 /******************** btrt ********************/
+static const HANPSTR sg_pMP4_btrt_Name = TEXT("比特率信息");
+static const HANPSTR sg_pBoxFieldName_btrt[VIDEO_MP4_btrt_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_btrt_BOX_FIELD_BUFFER_SIZE] = TEXT("解码缓存大小"),
+    [VIDEO_MP4_btrt_BOX_FIELD_MAX_BIT_RATE] = TEXT("最大比特率"),
+    [VIDEO_MP4_btrt_BOX_FIELD_AVG_BIT_RATE] = TEXT("平均比特率"),
+};
+
+HANPSTR GetMP4_btrt_Name(void)
+{
+    return sg_pMP4_btrt_Name;
+}
+HANPSTR GetMP4_btrt_FieldName(VIDEOMP4BOXFIELD_btrt eName)
+{
+    return sg_pBoxFieldName_btrt[eName];
+}
+#endif
+
+#if 1 /******************** stts ********************/
+static const HANPSTR sg_pMP4_stts_Name = TEXT("解码时间-样本映射表");
+static const HANPSTR sg_pBoxFieldName_stts[VIDEO_MP4_stts_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_stts_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_stts_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_stts_BOX_FIELD_ENTRY] = TEXT("时间样本"),
+    [VIDEO_MP4_stts_BOX_FIELD_SAMPLE_COUNT] = TEXT("相同时长的连续帧数量"),
+    [VIDEO_MP4_stts_BOX_FIELD_SAMPLE_DELTA] = TEXT("帧时长"),
+};
+
+HANPSTR GetMP4_stts_Name(void)
+{
+    return sg_pMP4_stts_Name;
+}
+HANPSTR GetMP4_stts_FieldName(VIDEOMP4BOXFIELD_stts eName)
+{
+    return sg_pBoxFieldName_stts[eName];
+}
+#endif
+
+#if 1 /******************** ctts ********************/
+static const HANPSTR sg_pMP4_ctts_Name = TEXT("合成时间-样本映射表");
+static const HANPSTR sg_pBoxFieldName_ctts[VIDEO_MP4_ctts_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_ctts_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_ctts_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_ctts_BOX_FIELD_ENTRY] = TEXT("偏移样本"),
+    [VIDEO_MP4_ctts_BOX_FIELD_SAMPLE_COUNT] = TEXT("相同偏移量的连续帧数量"),
+    [VIDEO_MP4_ctts_BOX_FIELD_SAMPLE_OFFSET] = TEXT("偏移量"),
+};
+
+HANPSTR GetMP4_ctts_Name(void)
+{
+    return sg_pMP4_ctts_Name;
+}
+HANPSTR GetMP4_ctts_FieldName(VIDEOMP4BOXFIELD_ctts eName)
+{
+    return sg_pBoxFieldName_ctts[eName];
+}
+#endif
+
+#if 1 /******************** stss ********************/
+static const HANPSTR sg_pMP4_stss_Name = TEXT("同步样本表");
+static const HANPSTR sg_pBoxFieldName_stss[VIDEO_MP4_stss_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_stss_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_stss_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_stss_BOX_FIELD_ENTRY] = TEXT("关键帧"),
+};
+
+HANPSTR GetMP4_stss_Name(void)
+{
+    return sg_pMP4_stss_Name;
+}
+HANPSTR GetMP4_stss_FieldName(VIDEOMP4BOXFIELD_stss eName)
+{
+    return sg_pBoxFieldName_stss[eName];
+}
+#endif
+
+#if 1 /******************** stsc ********************/
+static const HANPSTR sg_pMP4_stsc_Name = TEXT("样本与块映射表");
+static const HANPSTR sg_pBoxFieldName_stsc[VIDEO_MP4_stsc_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_stsc_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_stsc_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_stsc_BOX_FIELD_ENTRY] = TEXT("Chunk组"),
+    [VIDEO_MP4_stsc_BOX_FIELD_FIRST_CHUNK] = TEXT("起始Chunk序号"),
+    [VIDEO_MP4_stsc_BOX_FIELD_SAMPLE_PER_CHUNK] = TEXT("样本数量"),
+    [VIDEO_MP4_stsc_BOX_FIELD_SAMPLE_DESCRIPTION_ID] = TEXT("描述索引"),
+};
+
+HANPSTR GetMP4_stsc_Name(void)
+{
+    return sg_pMP4_stsc_Name;
+}
+HANPSTR GetMP4_stsc_FieldName(VIDEOMP4BOXFIELD_stsc eName)
+{
+    return sg_pBoxFieldName_stsc[eName];
+}
+#endif
+
+#if 1 /******************** stsz ********************/
+static const HANPSTR sg_pMP4_stsz_Name = TEXT("样本大小表");
+static const HANPSTR sg_pBoxFieldName_stsz[VIDEO_MP4_stsz_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_stsz_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_stsz_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_stsz_BOX_FIELD_SAMPLE_SIZE] = TEXT("样本大小"),
+    [VIDEO_MP4_stsz_BOX_FIELD_SIZE] = TEXT("样本大小"),
+};
+
+HANPSTR GetMP4_stsz_Name(void)
+{
+    return sg_pMP4_stsz_Name;
+}
+HANPSTR GetMP4_stsz_FieldName(VIDEOMP4BOXFIELD_stsz eName)
+{
+    return sg_pBoxFieldName_stsz[eName];
+}
+#endif
+
+#if 1 /******************** stco ********************/
+static const HANPSTR sg_pMP4_stco_Name = TEXT("块偏移表");
+static const HANPSTR sg_pBoxFieldName_stco[VIDEO_MP4_stco_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_stco_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_stco_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_stco_BOX_FIELD_ENTRY] = TEXT("块偏移"),
+};
+
+HANPSTR GetMP4_stco_Name(void)
+{
+    return sg_pMP4_stco_Name;
+}
+HANPSTR GetMP4_stco_FieldName(VIDEOMP4BOXFIELD_stco eName)
+{
+    return sg_pBoxFieldName_stco[eName];
+}
+#endif
+
+#if 1 /******************** smhd ********************/
+static const HANPSTR sg_pMP4_smhd_Name = TEXT("音频媒体头");
+static const HANPSTR sg_pBoxFieldName_smhd[VIDEO_MP4_smhd_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_smhd_BOX_FIELD_VERSION] = TEXT("版本"),
+    [VIDEO_MP4_smhd_BOX_FIELD_FLAGS] = TEXT("标志"),
+    [VIDEO_MP4_smhd_BOX_FIELD_BALANCE] = TEXT("立体声平衡"),
+};
+
+HANPSTR GetMP4_smhd_Name(void)
+{
+    return sg_pMP4_smhd_Name;
+}
+HANPSTR GetMP4_smhd_FieldName(VIDEOMP4BOXFIELD_smhd eName)
+{
+    return sg_pBoxFieldName_smhd[eName];
+}
+#endif
+
+#if 1 /******************** mp4a ********************/
+typedef enum {
+    VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_1,
+    VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_2,
+    VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_DEFAULT,
+    VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_CNT,
+} VEDIOMP4mp4aBOXFIELDCHANNELCOUNT;
+
+static const HANPSTR sg_pMP4_mp4a_Name = TEXT("MP4音频采样");
+static const HANPSTR sg_pBoxFieldName_mp4a[VIDEO_MP4_mp4a_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_mp4a_BOX_FIELD_ID] = TEXT("ID"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_VERSION] = TEXT("QuickTime音频编码版本"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_REVISION] = TEXT("修订"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_VENDOR] = TEXT("供应商"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT] = TEXT("声道数"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_SIZE] = TEXT("样本大小"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_COMPRESSION_ID] = TEXT("压缩ID"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_PACKET_SIZE] = TEXT("数据包大小"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_RATE] = TEXT("采样率"),
+};
+static const HANPSTR sg_pMP4_mp4a_ChannelCountName[VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_CNT] = {
+    [VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_1] = TEXT("单声道"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_2] = TEXT("立体声"),
+    [VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_DEFAULT] = TEXT("未知"),
+};
+
+HANPSTR GetMP4_mp4a_Name(void)
+{
+    return sg_pMP4_mp4a_Name;
+}
+HANPSTR GetMP4_mp4a_FieldName(VIDEOMP4BOXFIELD_mp4a eName)
+{
+    return sg_pBoxFieldName_mp4a[eName];
+}
+HANPSTR GetMP4_mp4a_ChannelCountName(uint16_t nCnt)
+{
+    HANPSTR pRet;
+
+    switch (nCnt) {
+        case 1: { pRet = sg_pMP4_mp4a_ChannelCountName[VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_1]; } break;
+        case 2: { pRet = sg_pMP4_mp4a_ChannelCountName[VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_2]; } break;
+        default: { pRet = sg_pMP4_mp4a_ChannelCountName[VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT_DEFAULT]; } break;
+    }
+
+    return pRet;
+}
+#endif
+
+#if 1 /******************** esds ********************/
+static const HANPSTR sg_pMP4_esds_Name = TEXT("元素流描述符");
+
+HANPSTR GetMP4_esds_Name(void)
+{
+    return sg_pMP4_esds_Name;
+}
+#endif
+
+#if 1 /******************** udta ********************/
+static const HANPSTR sg_pMP4_udta_Name = TEXT("用户数据");
+
+HANPSTR GetMP4_udta_Name(void)
+{
+    return sg_pMP4_udta_Name;
+}
+#endif
+
+#if 1 /******************** meta ********************/
+static const HANPSTR sg_pMP4_meta_Name = TEXT("元数据");
+
+HANPSTR GetMP4_meta_Name(void)
+{
+    return sg_pMP4_meta_Name;
+}
+#endif
+
+#if 1 /******************** ilst ********************/
+static const HANPSTR sg_pMP4_ilst_Name = TEXT("条目列表");
+
+HANPSTR GetMP4_ilst_Name(void)
+{
+    return sg_pMP4_ilst_Name;
+}
+#endif
+
+#if 1 /******************** data ********************/
+typedef enum {
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_1,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_13,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_14,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_21,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_22,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_DEFAULT,
+    VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_CNT,
+} VEDIOMP4dataBOXFIELDDATATYPE;
+
+static const HANPSTR sg_pMP4_data_Name = TEXT("数据");
+static const HANPSTR sg_pBoxFieldName_data[VIDEO_MP4_data_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_data_BOX_DATA_TYPE] = TEXT("数据类型"),
+    [VIDEO_MP4_data_BOX_LOCALE] = TEXT("语言/地区代码"),
+    [VIDEO_MP4_data_BOX_DATA] = TEXT("数据"),
+};
+static const HANPSTR sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_CNT] = {
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_1] = TEXT("UTF-8文本"),
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_13] = TEXT("JPEG图片"),
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_14] = TEXT("PNG图片"),
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_21] = TEXT("有符号大端整数"),
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_22] = TEXT("有符号大端整数对"),
+    [VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_DEFAULT] = TEXT("未知类型"),
+};
+
+HANPSTR GetMP4_data_Name(void)
+{
+    return sg_pMP4_data_Name;
+}
+HANPSTR GetMP4_data_FieldName(VIDEOMP4BOXFIELD_data eName)
+{
+    return sg_pBoxFieldName_data[eName];
+}
+HANPSTR GetMP4_data_DataTypeName(uint32_t cType)
+{
+    HANPSTR pRet;
+
+    switch (cType) {
+        case 1: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_1]; } break;
+        case 13: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_13]; } break;
+        case 14: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_14]; } break;
+        case 21: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_21]; } break;
+        case 22: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_22]; } break;
+        default: { pRet = sg_pMP4_data_DataTypeName[VIDEO_MP4_data_BOX_FIELD_DATA_TYPE_DEFAULT]; } break;
+    }
+
+    return pRet;
+}
+#endif
+
+#if 1 /******************** desc ********************/
+static const HANPSTR sg_pMP4_desc_Name = TEXT("描述");
+
+HANPSTR GetMP4_desc_Name(void)
+{
+    return sg_pMP4_desc_Name;
+}
+#endif
+
+#if 1 /******************** ?too ********************/
+static const HANPSTR sg_pMP4_Copyright_too_Name = TEXT("编码器信息");
+
+HANPSTR GetMP4_Copyright_too_Name(void)
+{
+    return sg_pMP4_Copyright_too_Name;
 }
 #endif

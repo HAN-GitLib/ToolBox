@@ -36,6 +36,11 @@ typedef struct tagVIDEOCREATEPARAM {
     HANSIZE             nLen;                           /* 文件大小，由父窗口管理，子窗口只能读取，不可修改 */
 } VIDEOCREATEPARAM, * PVIDEOCREATEPARAM;
 
+typedef struct tagVIDEORESOLUTION {
+    uint32_t            pxWidth;
+    uint32_t            pxHeight;
+} VIDEORESOLUTION, * PVIDEORESOLUTION;
+
 #ifdef __cplusplus
 }
 #endif

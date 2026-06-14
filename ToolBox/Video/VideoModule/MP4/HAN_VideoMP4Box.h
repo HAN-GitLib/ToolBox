@@ -8,29 +8,11 @@ extern "C" {
 #include "..\..\HAN_VideoDef.h"
 
 typedef enum {
-    VIDEO_MP4_PROFILE_TYPE_BASELINE,
-    VIDEO_MP4_PROFILE_TYPE_CONSTRAINED_BASELINE,
-    VIDEO_MP4_PROFILE_TYPE_MAIN,
-    VIDEO_MP4_PROFILE_TYPE_EXTENDED,
-    VIDEO_MP4_PROFILE_TYPE_HIGH,
-    VIDEO_MP4_PROFILE_TYPE_PROGRESSIVE_HIGH,
-    VIDEO_MP4_PROFILE_TYPE_CONSTRAINED_HIGH,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_10,
-    VIDEO_MP4_PROFILE_TYPE_PROGRESSIVE_HIGH_10,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_422,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_444_PREDICTIVE,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_10_INTRA,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_422_INTRA,
-    VIDEO_MP4_PROFILE_TYPE_HIGH_444_INTRA,
-    VIDEO_MP4_PROFILE_TYPE_CAVLC_444_INTRA,
-    VIDEO_MP4_PROFILE_TYPE_CNT,
-} VIDEOMP4PROFILETYPE;
-
-typedef enum {
     VIDEO_MP4_BOX_TYPE_ftyp,
     VIDEO_MP4_BOX_TYPE_free,
     VIDEO_MP4_BOX_TYPE_moov,
     VIDEO_MP4_BOX_TYPE_mvhd,
+    VIDEO_MP4_BOX_TYPE_iods,
     VIDEO_MP4_BOX_TYPE_trak,
     VIDEO_MP4_BOX_TYPE_tkhd,
     VIDEO_MP4_BOX_TYPE_edts,
@@ -47,6 +29,24 @@ typedef enum {
     VIDEO_MP4_BOX_TYPE_stsd,
     VIDEO_MP4_BOX_TYPE_avc1,
     VIDEO_MP4_BOX_TYPE_avcC,
+    VIDEO_MP4_BOX_TYPE_pasp,
+    VIDEO_MP4_BOX_TYPE_btrt,
+    VIDEO_MP4_BOX_TYPE_stts,
+    VIDEO_MP4_BOX_TYPE_ctts,
+    VIDEO_MP4_BOX_TYPE_stss,
+    VIDEO_MP4_BOX_TYPE_stsc,
+    VIDEO_MP4_BOX_TYPE_stsz,
+    VIDEO_MP4_BOX_TYPE_stco,
+    VIDEO_MP4_BOX_TYPE_co64,
+    VIDEO_MP4_BOX_TYPE_smhd,
+    VIDEO_MP4_BOX_TYPE_mp4a,
+    VIDEO_MP4_BOX_TYPE_esds,
+    VIDEO_MP4_BOX_TYPE_udta,
+    VIDEO_MP4_BOX_TYPE_meta,
+    VIDEO_MP4_BOX_TYPE_ilst,
+    VIDEO_MP4_BOX_TYPE_data,
+    VIDEO_MP4_BOX_TYPE_desc,
+    VIDEO_MP4_BOX_TYPE_Copyright_too,
     VIDEO_MP4_BOX_TYPE_CNT,
 } VIDEOMP4BOXTYPE;
 
@@ -80,6 +80,16 @@ typedef enum {
 } VIDEOMP4VIDEOGRAPHICSMODE;
 
 typedef enum {
+    VIDEO_MP4_VIDEO_FORMAT_COMPONENT,
+    VIDEO_MP4_VIDEO_FORMAT_PAL,
+    VIDEO_MP4_VIDEO_FORMAT_NTSC,
+    VIDEO_MP4_VIDEO_FORMAT_SECAM,
+    VIDEO_MP4_VIDEO_FORMAT_MAC,
+    VIDEO_MP4_VIDEO_FORMAT_UNSPECIFIED,
+    VIDEO_MP4_VIDEO_FORMAT_CNT,
+} VIDEOMP4VIDEOFORMAT;
+
+typedef enum {
     VIDEO_MP4_ftyp_BOX_FIELD_MAJOR_BRAND,
     VIDEO_MP4_ftyp_BOX_FIELD_MINOR_VERSION,
     VIDEO_MP4_ftyp_BOX_FIELD_COMPATIBLE_BRANDS,
@@ -103,6 +113,12 @@ typedef enum {
     VIDEO_MP4_mvhd_BOX_FIELD_NEXT_TRACK_ID,
     VIDEO_MP4_mvhd_BOX_FIELD_CNT,
 } VIDEOMP4BOXFIELD_mvhd;
+typedef enum {
+    VIDEO_MP4_iods_BOX_FIELD_VERSION,
+    VIDEO_MP4_iods_BOX_FIELD_FLAGS,
+    VIDEO_MP4_iods_BOX_FIELD_DATA,
+    VIDEO_MP4_iods_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_iods;
 typedef enum {
     VIDEO_MP4_tkhd_BOX_FIELD_VERSION,
     VIDEO_MP4_tkhd_BOX_FIELD_FLAGS,
@@ -174,9 +190,88 @@ typedef enum {
     VIDEO_MP4_avcC_BOX_FIELD_AVC_PPS,
     VIDEO_MP4_avcC_BOX_FIELD_CNT,
 } VIDEOMP4BOXFIELD_avcC;
+typedef enum {
+    VIDEO_MP4_pasp_BOX_FIELD_PIXEL_ASPECT_RATIO,
+    VIDEO_MP4_pasp_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_pasp;
+typedef enum {
+    VIDEO_MP4_btrt_BOX_FIELD_BUFFER_SIZE,
+    VIDEO_MP4_btrt_BOX_FIELD_MAX_BIT_RATE,
+    VIDEO_MP4_btrt_BOX_FIELD_AVG_BIT_RATE,
+    VIDEO_MP4_btrt_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_btrt;
+typedef enum {
+    VIDEO_MP4_stts_BOX_FIELD_VERSION,
+    VIDEO_MP4_stts_BOX_FIELD_FLAGS,
+    VIDEO_MP4_stts_BOX_FIELD_ENTRY,
+    VIDEO_MP4_stts_BOX_FIELD_SAMPLE_COUNT,
+    VIDEO_MP4_stts_BOX_FIELD_SAMPLE_DELTA,
+    VIDEO_MP4_stts_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_stts;
+typedef enum {
+    VIDEO_MP4_ctts_BOX_FIELD_VERSION,
+    VIDEO_MP4_ctts_BOX_FIELD_FLAGS,
+    VIDEO_MP4_ctts_BOX_FIELD_ENTRY,
+    VIDEO_MP4_ctts_BOX_FIELD_SAMPLE_COUNT,
+    VIDEO_MP4_ctts_BOX_FIELD_SAMPLE_OFFSET,
+    VIDEO_MP4_ctts_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_ctts;
+typedef enum {
+    VIDEO_MP4_stss_BOX_FIELD_VERSION,
+    VIDEO_MP4_stss_BOX_FIELD_FLAGS,
+    VIDEO_MP4_stss_BOX_FIELD_ENTRY,
+    VIDEO_MP4_stss_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_stss;
+typedef enum {
+    VIDEO_MP4_stsc_BOX_FIELD_VERSION,
+    VIDEO_MP4_stsc_BOX_FIELD_FLAGS,
+    VIDEO_MP4_stsc_BOX_FIELD_ENTRY,
+    VIDEO_MP4_stsc_BOX_FIELD_FIRST_CHUNK,
+    VIDEO_MP4_stsc_BOX_FIELD_SAMPLE_PER_CHUNK,
+    VIDEO_MP4_stsc_BOX_FIELD_SAMPLE_DESCRIPTION_ID,
+    VIDEO_MP4_stsc_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_stsc;
+typedef enum {
+    VIDEO_MP4_stsz_BOX_FIELD_VERSION,
+    VIDEO_MP4_stsz_BOX_FIELD_FLAGS,
+    VIDEO_MP4_stsz_BOX_FIELD_SAMPLE_SIZE,
+    VIDEO_MP4_stsz_BOX_FIELD_SIZE,
+    VIDEO_MP4_stsz_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_stsz;
+typedef enum {
+    VIDEO_MP4_stco_BOX_FIELD_VERSION,
+    VIDEO_MP4_stco_BOX_FIELD_FLAGS,
+    VIDEO_MP4_stco_BOX_FIELD_ENTRY,
+    VIDEO_MP4_stco_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_stco;
+typedef enum {
+    VIDEO_MP4_smhd_BOX_FIELD_VERSION,
+    VIDEO_MP4_smhd_BOX_FIELD_FLAGS,
+    VIDEO_MP4_smhd_BOX_FIELD_BALANCE,
+    VIDEO_MP4_smhd_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_smhd;
+typedef enum {
+    VIDEO_MP4_mp4a_BOX_FIELD_ID,
+    VIDEO_MP4_mp4a_BOX_FIELD_VERSION,
+    VIDEO_MP4_mp4a_BOX_FIELD_REVISION,
+    VIDEO_MP4_mp4a_BOX_FIELD_VENDOR,
+    VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT,
+    VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_SIZE,
+    VIDEO_MP4_mp4a_BOX_FIELD_COMPRESSION_ID,
+    VIDEO_MP4_mp4a_BOX_FIELD_PACKET_SIZE,
+    VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_RATE,
+    VIDEO_MP4_mp4a_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_mp4a;
+typedef enum {
+    VIDEO_MP4_data_BOX_DATA_TYPE,
+    VIDEO_MP4_data_BOX_LOCALE,
+    VIDEO_MP4_data_BOX_DATA,
+    VIDEO_MP4_data_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_data;
 
 typedef struct tagVIDEOMP4BOX {
-    uint32_t                        nSize;
+    HANSIZE                         nSize;
+    HANSIZE                         nDataLen;
     uint8_t                         pType[4];
     const uint8_t*                  pData;
 } VIDEOMP4BOX, * PVIDEOMP4BOX;
@@ -200,10 +295,13 @@ typedef struct tagVIDEOMP4BOXINFOINTDOUBLE {
     };
     HANDOUBLE                       nPhy;
 } VIDEOMP4BOXINFOINTDOUBLE, * PVIDEOMP4BOXINFOINTDOUBLE;
-
-typedef struct tagVIDEOMP4BOXINFO_mvhd {
+typedef struct tagVIDEOMP4BOXINFOFULLBOXVERFLAGS {
     uint8_t                         nVersion;
     uint32_t                        cFlags;
+} VIDEOMP4BOXINFOFULLBOXVERFLAGS, * PVIDEOMP4BOXINFOFULLBOXVERFLAGS;
+
+typedef struct tagVIDEOMP4BOXINFO_mvhd {
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
     VIDEOMP4BOXINFOTIMEDURATION     timeDuration;
@@ -214,8 +312,7 @@ typedef struct tagVIDEOMP4BOXINFO_mvhd {
 } VIDEOMP4BOXINFO_mvhd, * PVIDEOMP4BOXINFO_mvhd;
 
 typedef struct tagVIDEOMP4BOXINFO_tkhd {
-    uint8_t                         nVersion;
-    uint32_t                        cFlags;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
     uint32_t                        nTrackId;
@@ -235,8 +332,7 @@ typedef struct tagVIDEOMP4BOXINFO_elst {
 } VIDEOMP4BOXINFO_elst, * PVIDEOMP4BOXINFO_elst;
 
 typedef struct tagVIDEOMP4BOXINFO_mdhd {
-    uint8_t                         nVersion;
-    uint32_t                        cFlags;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
     VIDEOMP4BOXINFOTIMEDURATION     timeDuration;
@@ -244,25 +340,22 @@ typedef struct tagVIDEOMP4BOXINFO_mdhd {
 } VIDEOMP4BOXINFO_mdhd, * PVIDEOMP4BOXINFO_mdhd;
 
 typedef struct tagVIDEOMP4BOXINFO_hdlr {
-    uint8_t                         nVersion;
-    uint32_t                        cFlags;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     struct {
-        uint8_t                     pType[4];
+        uint8_t                     pType[5];
         VIDEOMP4TRACKHANDLERTYPE    eType;
     } handlerType;
     const uint8_t*                  pName;
 } VIDEOMP4BOXINFO_hdlr, * PVIDEOMP4BOXINFO_hdlr;
 
 typedef struct tagVIDEOMP4BOXINFO_vmhd {
-    uint8_t                         nVersion;
-    uint32_t                        cFlags;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     uint16_t                        cGraphicsMode;
     uint16_t                        pOpColor[3];
 } VIDEOMP4BOXINFO_vmhd, * PVIDEOMP4BOXINFO_vmhd;
 
 typedef struct tagVIDEOMP4BOXINFO_url_ {
-    uint8_t                         nVersion;
-    uint32_t                        cFlags;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     const uint8_t*                  pUrl;
 } VIDEOMP4BOXINFO_url_, * PVIDEOMP4BOXINFO_url_;
 
@@ -302,51 +395,19 @@ typedef struct tagVIDEOMP4BOXINFO_avcC {
     } pps;
 } VIDEOMP4BOXINFO_avcC, * PVIDEOMP4BOXINFO_avcC;
 
-typedef struct tagVIDEOMP4BOXINFO_SPS {
-    struct {
-        uint8_t                     refIdc;
-        uint8_t                     naluType;
-    } header;
-    VIDEOMP4PROFILETYPE             eProfile;
-    uint8_t                         nProfileIdc;
-    union {
-        uint8_t                     cFlags;
-        struct {
-            uint8_t                 bSet0 : 1;
-            uint8_t                 bSet1 : 1;
-            uint8_t                 bSet2 : 1;
-            uint8_t                 bSet3 : 1;
-            uint8_t                 bSet4 : 1;
-            uint8_t                 bSet5 : 1;
-            uint8_t                 bReserve : 2;
-        } bSets;
-    } nConstraintSetFlags;
-    uint8_t                         nLevelIdc;
-    uint8_t                         nSPSId;
-    struct {
-        uint8_t                     nChromaFormatIdc;
-        BOOL                        bSeparateColourPlane;
-        struct { // 亮度参数
-            uint8_t                 nBitDepth;
-            uint8_t                 nQuantizationParamRange;
-        } lumaParam;
-        struct { // 色度参数
-            uint8_t                 nBitDepth;
-            uint8_t                 nQuantizationParamRange;
-        } chromaParam;
-        BOOL                        bBypassTransform;
-        struct {
-            BOOL                    bValid;
-        } seqScalingMatrix;
-    } profileParam;
-    HANSIZE                         nMaxFrameNum;
-    uint32_t                        nPOCType;
-    HANSIZE                         nMaxPicOrderCntLsb;
-    uint32_t                        nMaxNumRefFrames;
-    uint8_t                         cGapsInFrameNumValueAllowedFlag;
-    uint32_t                        nWidth;
-    uint32_t                        nHeight;
-} VIDEOMP4BOXINFO_SPS, * PVIDEOMP4BOXINFO_SPS;
+typedef struct tagVIDEOMP4BOXINFO_mp4a {
+    uint16_t                        nId;
+    uint16_t                        nVersion;
+    uint16_t                        nRevision;
+    uint32_t                        nVendor;
+    uint16_t                        nChannelCnt;
+    uint16_t                        nSampleSize;
+    uint16_t                        nCompressionId;
+    uint16_t                        nPacketSize;
+    HANDOUBLE                       nSampleRate;
+} VIDEOMP4BOXINFO_mp4a, * PVIDEOMP4BOXINFO_mp4a;
+
+HANPSTR GetMP4BoxVersionName(uint8_t nVersion);
 
 HANPSTR GetMP4_ftyp_Name(void);
 HANPSTR GetMP4_ftyp_FieldName(VIDEOMP4BOXFIELD_ftyp eName);
@@ -358,13 +419,14 @@ HANPSTR GetMP4_moov_Name(void);
 
 HANPSTR GetMP4_mvhd_Name(void);
 HANPSTR GetMP4_mvhd_FieldName(VIDEOMP4BOXFIELD_mvhd eName);
-HANPSTR GetMP4_mvhd_VersionName(uint8_t nVersion);
+
+HANPSTR GetMP4_iods_Name(void);
+HANPSTR GetMP4_iods_FieldName(VIDEOMP4BOXFIELD_iods eName);
 
 HANPSTR GetMP4_trak_Name(void);
 
 HANPSTR GetMP4_tkhd_Name(void);
 HANPSTR GetMP4_tkhd_FieldName(VIDEOMP4BOXFIELD_tkhd eName);
-HANPSTR GetMP4_tkhd_VersionName(uint8_t nVersion);
 void GetMP4_tkhd_FlagsName(uint32_t cFlags, HANPSTR pText, HANSIZE nLen);
 
 HANPSTR GetMP4_edts_Name(void);
@@ -375,7 +437,6 @@ HANPSTR GetMP4_mdia_Name(void);
 
 HANPSTR GetMP4_mdhd_Name(void);
 HANPSTR GetMP4_mdhd_FieldName(VIDEOMP4BOXFIELD_mdhd eName);
-HANPSTR GetMP4_mdhd_VersionName(uint8_t nVersion);
 
 HANPSTR GetMP4_hdlr_Name(void);
 HANPSTR GetMP4_hdlr_FieldName(VIDEOMP4BOXFIELD_hdlr eName);
@@ -404,6 +465,54 @@ HANPSTR GetMP4_avc1_FieldName(VIDEOMP4BOXFIELD_avc1 eName);
 
 HANPSTR GetMP4_avcC_Name(void);
 HANPSTR GetMP4_avcC_FieldName(VIDEOMP4BOXFIELD_avcC eName);
+HANPSTR GetMP4_avcC_ProfileIndicationName(uint8_t nProfileIndication);
+
+HANPSTR GetMP4_pasp_Name(void);
+HANPSTR GetMP4_pasp_FieldName(VIDEOMP4BOXFIELD_pasp eName);
+
+HANPSTR GetMP4_btrt_Name(void);
+HANPSTR GetMP4_btrt_FieldName(VIDEOMP4BOXFIELD_btrt eName);
+
+HANPSTR GetMP4_stts_Name(void);
+HANPSTR GetMP4_stts_FieldName(VIDEOMP4BOXFIELD_stts eName);
+
+HANPSTR GetMP4_ctts_Name(void);
+HANPSTR GetMP4_ctts_FieldName(VIDEOMP4BOXFIELD_ctts eName);
+
+HANPSTR GetMP4_stss_Name(void);
+HANPSTR GetMP4_stss_FieldName(VIDEOMP4BOXFIELD_stss eName);
+
+HANPSTR GetMP4_stsc_Name(void);
+HANPSTR GetMP4_stsc_FieldName(VIDEOMP4BOXFIELD_stsc eName);
+
+HANPSTR GetMP4_stsz_Name(void);
+HANPSTR GetMP4_stsz_FieldName(VIDEOMP4BOXFIELD_stsz eName);
+
+HANPSTR GetMP4_stco_Name(void);
+HANPSTR GetMP4_stco_FieldName(VIDEOMP4BOXFIELD_stco eName);
+
+HANPSTR GetMP4_smhd_Name(void);
+HANPSTR GetMP4_smhd_FieldName(VIDEOMP4BOXFIELD_smhd eName);
+
+HANPSTR GetMP4_mp4a_Name(void);
+HANPSTR GetMP4_mp4a_FieldName(VIDEOMP4BOXFIELD_mp4a eName);
+HANPSTR GetMP4_mp4a_ChannelCountName(uint16_t nCnt);
+
+HANPSTR GetMP4_esds_Name(void);
+
+HANPSTR GetMP4_udta_Name(void);
+
+HANPSTR GetMP4_meta_Name(void);
+
+HANPSTR GetMP4_ilst_Name(void);
+
+HANPSTR GetMP4_data_Name(void);
+HANPSTR GetMP4_data_FieldName(VIDEOMP4BOXFIELD_data eName);
+HANPSTR GetMP4_data_DataTypeName(uint32_t cType);
+
+HANPSTR GetMP4_desc_Name(void);
+
+HANPSTR GetMP4_Copyright_too_Name(void);
 
 #ifdef __cplusplus
 }
