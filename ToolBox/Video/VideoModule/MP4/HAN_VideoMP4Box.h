@@ -6,10 +6,12 @@ extern "C" {
 #endif
 
 #include "..\..\HAN_VideoDef.h"
+#include "..\H264\HAN_VideoH264Def.h"
 
 typedef enum {
     VIDEO_MP4_BOX_TYPE_ftyp,
     VIDEO_MP4_BOX_TYPE_free,
+    VIDEO_MP4_BOX_TYPE_mdat,
     VIDEO_MP4_BOX_TYPE_moov,
     VIDEO_MP4_BOX_TYPE_mvhd,
     VIDEO_MP4_BOX_TYPE_iods,
@@ -101,6 +103,16 @@ typedef enum {
     VIDEO_MP4_free_BOX_FIELD_TEXT,
     VIDEO_MP4_free_BOX_FIELD_CNT,
 } VIDEOMP4BOXFIELD_free;
+typedef enum {
+    VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID,
+    VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID,
+    VIDEO_MP4_mdat_BOX_FIELD_OFFSET,
+    VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE,
+    VIDEO_MP4_mdat_BOX_FIELD_DTS,
+    VIDEO_MP4_mdat_BOX_FIELD_PTS,
+    VIDEO_MP4_mdat_BOX_FIELD_DURATION,
+    VIDEO_MP4_mdat_BOX_FIELD_CNT,
+} VIDEOMP4BOXFIELD_mdat;
 typedef enum {
     VIDEO_MP4_mvhd_BOX_FIELD_VERSION,
     VIDEO_MP4_mvhd_BOX_FIELD_FLAGS,
@@ -273,6 +285,7 @@ typedef struct tagVIDEOMP4BOX {
     HANSIZE                         nSize;
     HANSIZE                         nDataLen;
     uint8_t                         pType[4];
+    VIDEOMP4BOXTYPE                 eType;
     const uint8_t*                  pData;
 } VIDEOMP4BOX, * PVIDEOMP4BOX;
 typedef const VIDEOMP4BOX* PCVIDEOMP4BOX;
@@ -301,6 +314,7 @@ typedef struct tagVIDEOMP4BOXINFOFULLBOXVERFLAGS {
 } VIDEOMP4BOXINFOFULLBOXVERFLAGS, * PVIDEOMP4BOXINFOFULLBOXVERFLAGS;
 
 typedef struct tagVIDEOMP4BOXINFO_mvhd {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
@@ -312,6 +326,7 @@ typedef struct tagVIDEOMP4BOXINFO_mvhd {
 } VIDEOMP4BOXINFO_mvhd, * PVIDEOMP4BOXINFO_mvhd;
 
 typedef struct tagVIDEOMP4BOXINFO_tkhd {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
@@ -326,12 +341,14 @@ typedef struct tagVIDEOMP4BOXINFO_tkhd {
 } VIDEOMP4BOXINFO_tkhd, * PVIDEOMP4BOXINFO_tkhd;
 
 typedef struct tagVIDEOMP4BOXINFO_elst {
+    const uint8_t*                  pRawData;
     ULARGE_INTEGER                  nSegmentDuration;
     ULARGE_INTEGER                  nMediaTime;
     VIDEOMP4BOXINFOINTDOUBLE        mediaRate;
 } VIDEOMP4BOXINFO_elst, * PVIDEOMP4BOXINFO_elst;
 
 typedef struct tagVIDEOMP4BOXINFO_mdhd {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     VIDEOMP4BOXINFODATETIME         creationTime;
     VIDEOMP4BOXINFODATETIME         modificationTime;
@@ -340,6 +357,7 @@ typedef struct tagVIDEOMP4BOXINFO_mdhd {
 } VIDEOMP4BOXINFO_mdhd, * PVIDEOMP4BOXINFO_mdhd;
 
 typedef struct tagVIDEOMP4BOXINFO_hdlr {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     struct {
         uint8_t                     pType[5];
@@ -349,17 +367,20 @@ typedef struct tagVIDEOMP4BOXINFO_hdlr {
 } VIDEOMP4BOXINFO_hdlr, * PVIDEOMP4BOXINFO_hdlr;
 
 typedef struct tagVIDEOMP4BOXINFO_vmhd {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     uint16_t                        cGraphicsMode;
     uint16_t                        pOpColor[3];
 } VIDEOMP4BOXINFO_vmhd, * PVIDEOMP4BOXINFO_vmhd;
 
 typedef struct tagVIDEOMP4BOXINFO_url_ {
+    const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     const uint8_t*                  pUrl;
 } VIDEOMP4BOXINFO_url_, * PVIDEOMP4BOXINFO_url_;
 
 typedef struct tagVIDEOMP4BOXINFO_avc1 {
+    const uint8_t*                  pRawData;
     uint16_t                        nDataRefIndex;
     uint16_t                        nVersion;
     uint16_t                        nRevision;
@@ -378,24 +399,54 @@ typedef struct tagVIDEOMP4BOXINFO_avc1 {
 } VIDEOMP4BOXINFO_avc1, * PVIDEOMP4BOXINFO_avc1;
 
 typedef struct tagVIDEOMP4BOXINFO_avcC {
+    const uint8_t*                  pRawData;
     uint8_t                         nConfigurationVersion;
     uint8_t                         nAvcProfileIndication;
     uint8_t                         nProfileCompatibility;
     uint8_t                         nAvcLevelIndication;
     uint8_t                         nNALULengthSize;
     struct {
-        uint8_t                     nNum;
-        HANSIZE                     nSize;
-        const uint8_t*              pList;
+        uint8_t                                     nNum;
+        PVIDEOH264PARAMETER_seq_parameter_set       pSPS;
+        HANSIZE                                     nSize;
+        const uint8_t*                              pList;
     } sps;
     struct {
-        uint8_t                     nNum;
-        HANSIZE                     nSize;
-        const uint8_t*              pList;
+        uint8_t                                     nNum;
+        PVIDEOH264PARAMETER_pic_parameter_set       pPPS;
+        HANSIZE                                     nSize;
+        const uint8_t*                              pList;
     } pps;
 } VIDEOMP4BOXINFO_avcC, * PVIDEOMP4BOXINFO_avcC;
 
+typedef struct tagVIDEOMP4BOXINFO_stsdSubBoxDefault {
+    const uint8_t*                  pRawData;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
+    uint32_t                        nCnt;
+    const uint8_t*                  pEntry;
+    HANSIZE                         nEntrySize;
+} VIDEOMP4BOXINFO_stsdSubBoxDefault, * PVIDEOMP4BOXINFO_stsdSubBoxDefault;
+
+typedef struct tagVIDEOMP4BOXINFO_stsz {
+    const uint8_t*                  pRawData;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
+    uint32_t                        nSampleSize;
+    uint32_t                        nSampleCnt;
+    const uint8_t*                  pEntry;
+    HANSIZE                         nEntrySize;
+} VIDEOMP4BOXINFO_stsz, * PVIDEOMP4BOXINFO_stsz;
+
+typedef struct tagVIDEOMP4BOXINFO_stco64 {
+    const uint8_t*                  pRawData;
+    uint8_t                         nDataSize;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
+    uint32_t                        nChunkCnt;
+    const uint8_t*                  pEntry;
+    HANSIZE                         nEntrySize;
+} VIDEOMP4BOXINFO_stco64, * PVIDEOMP4BOXINFO_stco64;
+
 typedef struct tagVIDEOMP4BOXINFO_mp4a {
+    const uint8_t*                  pRawData;
     uint16_t                        nId;
     uint16_t                        nVersion;
     uint16_t                        nRevision;
@@ -407,6 +458,42 @@ typedef struct tagVIDEOMP4BOXINFO_mp4a {
     HANDOUBLE                       nSampleRate;
 } VIDEOMP4BOXINFO_mp4a, * PVIDEOMP4BOXINFO_mp4a;
 
+typedef struct tagVIDEOMP4DECODEINFOSAMPLE {
+    HANSIZE                         sOffset;        // 帧在文件中的偏移位置
+    HANSIZE                         timeDTS;        // DTS 的帧起始时间
+    HANSIZE                         timePTS;        // PTS 的帧起始时间
+    HANSIZE                         timeDuration;   // 持续时间
+    HANSIZE                         idKeyFrame;     // 所属关键帧的 ID，不用指针指向关键帧因为考虑到以后针对大文件做部分文件加载的话，指针没有意义，而 ID 或偏移量可以快速知道加载哪部分文件
+    uint32_t                        nSize;          // 帧的大小
+    uint32_t                        idChunkGroup;
+    uint32_t                        idChunk;
+    HANSIZE                         idDescription;
+} VIDEOMP4DECODEINFOSAMPLE, * PVIDEOMP4DECODEINFOSAMPLE;
+
+typedef struct tagVIDEOMP4TRACK {
+    VIDEOMP4BOXINFO_tkhd                tkhd;
+    VIDEOMP4BOXINFO_hdlr                hdlr;
+    VIDEOMP4BOXINFO_avc1                avc1;
+    VIDEOMP4BOXINFO_avcC                avcC;
+    VIDEOMP4BOXINFO_stsdSubBoxDefault   stts;
+    VIDEOMP4BOXINFO_stsdSubBoxDefault   ctts;
+    VIDEOMP4BOXINFO_stsdSubBoxDefault   stss;
+    VIDEOMP4BOXINFO_stsdSubBoxDefault   stsc;
+    VIDEOMP4BOXINFO_stsz                stsz;
+    VIDEOMP4BOXINFO_stco64              stco64;
+    HANSIZE                             nSampleCnt;
+    PVIDEOMP4DECODEINFOSAMPLE           pSample;
+} VIDEOMP4TRACK, * PVIDEOMP4TRACK;
+
+typedef struct tagVIDEOMP4BOXINFO {
+    struct {
+        HANSIZE                         nCnt;
+        HANSIZE                         nTargetId;
+        PVIDEOMP4TRACK                  pList;
+    } track;
+} VIDEOMP4BOXINFO, * PVIDEOMP4BOXINFO;
+typedef const VIDEOMP4BOXINFO* PCVIDEOMP4BOXINFO;
+
 HANPSTR GetMP4BoxVersionName(uint8_t nVersion);
 
 HANPSTR GetMP4_ftyp_Name(void);
@@ -414,6 +501,9 @@ HANPSTR GetMP4_ftyp_FieldName(VIDEOMP4BOXFIELD_ftyp eName);
 
 HANPSTR GetMP4_free_Name(void);
 HANPSTR GetMP4_free_FieldName(VIDEOMP4BOXFIELD_free eName);
+
+HANPSTR GetMP4_mdat_Name(void);
+HANPSTR GetMP4_mdat_FieldName(VIDEOMP4BOXFIELD_mdat eName);
 
 HANPSTR GetMP4_moov_Name(void);
 

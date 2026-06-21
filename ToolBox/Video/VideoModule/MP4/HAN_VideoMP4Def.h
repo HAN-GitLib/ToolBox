@@ -10,11 +10,17 @@ extern "C" {
 
 #include "..\..\HAN_VideoDef.h"
 
-#define HAN_VIDEO_MP4_TEXT_BUF_SIZE                 1024
+#define HAN_VIDEO_MP4_TEXT_BUF_SIZE                                 1024
 
-#define HAN_VIDEO_MP4_BOX_TREE_W                    200
+#define HAN_VIDEO_MP4_INVALID_SIZE                                  ((HANSIZE)(-1))
 
-#define HAN_VIDEO_MP4_BOX_ENTRIES_INFO_MAX_CNT      30
+#define HAN_VIDEO_MP4_BOX_TREE_W                                    200
+
+#define HAN_VIDEO_MP4_BOX_ENTRIES_INFO_MAX_CNT                      10
+
+#define HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_WIDTH             80
+#define HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_HEIGHT            22
+#define HAN_VIDEO_MP4_TRACK_ID_LIST_HEIGHT                          100
 
 #ifdef __cplusplus
 }

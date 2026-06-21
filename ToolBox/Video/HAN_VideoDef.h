@@ -15,7 +15,7 @@ extern "C" {
 
 #define VIDEO_TOOL_SIZE                 16
 
-#define VIDEO_BACKGROUND_BRUSH          (NULL_BRUSH)
+#define VIDEO_BACKGROUND_BRUSH          (WHITE_BRUSH)
 
 #define VIDEO_HEX_PRINT_LEN             10
 
@@ -28,6 +28,10 @@ typedef enum {
     /* MP4 */
     WID_VIDEO_MP4_BOX_TREE,
     WID_VIDEO_MP4_BOX_INFO,
+    WID_VIDEO_MP4_BOX_TRACK_ID_TEXT,
+    WID_VIDEO_MP4_BOX_TRACK_ID_LIST,
+    WID_VIDEO_MP4_BOX_SAMPLE_ID_TEXT,
+    WID_VIDEO_MP4_BOX_SAMPLE_ID_INPUT,
 } WIDVIDEO;
 
 typedef struct tagVIDEOCREATEPARAM {

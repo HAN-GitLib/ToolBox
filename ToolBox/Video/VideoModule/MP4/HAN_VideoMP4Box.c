@@ -64,6 +64,28 @@ HANPSTR GetMP4_free_FieldName(VIDEOMP4BOXFIELD_free eName)
 }
 #endif
 
+#if 1 /******************** mdat ********************/
+static const HANPSTR sg_pMP4_mdat_Name = TEXT("媒体数据");
+static const HANPSTR sg_pBoxFieldName_mdat[VIDEO_MP4_mdat_BOX_FIELD_CNT] = {
+    [VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID] = TEXT("轨道索引"),
+    [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID] = TEXT("样本索引"),
+    [VIDEO_MP4_mdat_BOX_FIELD_OFFSET] = TEXT("距文件起始偏移量"),
+    [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE] = TEXT("样本大小"),
+    [VIDEO_MP4_mdat_BOX_FIELD_DTS] = TEXT("DTS（解码时间）"),
+    [VIDEO_MP4_mdat_BOX_FIELD_PTS] = TEXT("PTS（显示时间）"),
+    [VIDEO_MP4_mdat_BOX_FIELD_DURATION] = TEXT("持续时间"),
+};
+
+HANPSTR GetMP4_mdat_Name(void)
+{
+    return sg_pMP4_mdat_Name;
+}
+HANPSTR GetMP4_mdat_FieldName(VIDEOMP4BOXFIELD_mdat eName)
+{
+    return sg_pBoxFieldName_mdat[eName];
+}
+#endif
+
 #if 1 /******************** moov ********************/
 static const HANPSTR sg_pMP4_moov_Name = TEXT("媒体元数据信息");
 

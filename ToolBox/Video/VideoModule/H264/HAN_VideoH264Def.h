@@ -14,6 +14,21 @@ extern "C" {
 #define VIDEO_H264_MAX_VALUE_num_slice_groups_minus1                        7
 #define VIDEO_H264_EXTENDED_SAR                                             255
 
+#define VIDEO_H264_SLICE_TYPE_ALL                                           5
+
+typedef enum {
+    VIDEO_H264_SLICE_TYPE_P = 0,
+    VIDEO_H264_SLICE_TYPE_B = 1,
+    VIDEO_H264_SLICE_TYPE_I = 2,
+    VIDEO_H264_SLICE_TYPE_SP = 3,
+    VIDEO_H264_SLICE_TYPE_SI = 4,
+    VIDEO_H264_SLICE_TYPE_P_ALL = 5,
+    VIDEO_H264_SLICE_TYPE_B_ALL = 6,
+    VIDEO_H264_SLICE_TYPE_I_ALL = 7,
+    VIDEO_H264_SLICE_TYPE_SP_ALL = 8,
+    VIDEO_H264_SLICE_TYPE_SI_ALL = 9,
+} VIDEOH264SLICETYPE;
+
 typedef enum {
     VIDEO_H264_OVERSCAN_NONE,
     VIDEO_H264_OVERSCAN_OVERSCAN,
@@ -103,7 +118,7 @@ typedef enum {
     VIDEO_H264_VUI_PARAM_FIELD_CNT,
 } VIDEOH264FIELDVUIPARAM;
 
-#if 1 /* SPS 原始数据结构体 */
+#if 1 /* H264 原始数据结构体 */
 typedef struct tagVIDEOH264PARAMETER_hrd_parameters {
     uint32_t                                    cpb_cnt_minus1;
     uint8_t                                     bit_rate_scale;
@@ -293,9 +308,168 @@ typedef struct tagVIDEOH264PARAMETER_pic_parameter_set {
     #endif
 } VIDEOH264PARAMETER_pic_parameter_set, * PVIDEOH264PARAMETER_pic_parameter_set;
 typedef const VIDEOH264PARAMETER_pic_parameter_set* PCVIDEOH264PARAMETER_pic_parameter_set;
+
+typedef struct tagVIDEOH264PARAMETER_ref_pic_list {
+    union {
+        #if 1 /* slice_type % 5 != 2 && slice_type % 5 != 4 */
+            uint8_t                                 ref_pic_list_modification_flag_l0;
+        #endif
+        #if 1 /* slice_type % 5 == 3 */
+            uint8_t                                 ref_pic_list_modification_flag_l1;
+        #endif
+    };
+        #if 1 /* ref_pic_list_modification_flag_l0 */
+            #if 1 /* do */
+                uint32_t                            modification_of_pic_nums_idc;
+                #if 1 /* modification_of_pic_nums_idc == 0 || modification_of_pic_nums_idc == 1 */
+                    uint8_t                         bValid_abs_diff_pic_num_minus1;
+                    uint32_t                        abs_diff_pic_num_minus1;
+                #endif
+                #if 1 /* modification_of_pic_nums_idc == 2 */
+                    uint8_t                         bValid_long_term_pic_num;
+                    uint32_t                        long_term_pic_num;
+                #endif
+                #if 1 /* modification_of_pic_nums_idc == 4 || modification_of_pic_nums_idc == 5 */
+                    uint8_t                         bValid_abs_diff_view_idx_minus1;
+                    uint32_t                        abs_diff_view_idx_minus1;
+                #endif
+            #endif /* while(modification_of_pic_nums_idc != 3) */
+        #endif
+} VIDEOH264PARAMETER_ref_pic_list, * PVIDEOH264PARAMETER_ref_pic_list;
+typedef const VIDEOH264PARAMETER_ref_pic_list* PCVIDEOH264PARAMETER_ref_pic_list;
+typedef VIDEOH264PARAMETER_ref_pic_list     VIDEOH264PARAMETER_ref_pic_list_mvc;
+typedef PVIDEOH264PARAMETER_ref_pic_list    PVIDEOH264PARAMETER_ref_pic_list_mvc;
+typedef PCVIDEOH264PARAMETER_ref_pic_list   PCVIDEOH264PARAMETER_ref_pic_list_mvc;
+
+typedef struct tagVIDEOH264PARAMETER_dec_ref_pic_marking {
+    #if 1 /* IdrPicFlag */
+        uint8_t                                     no_output_of_prior_pics_flag;
+        uint8_t                                     long_term_reference_flag;
+    #endif
+    #if 1 /* else */
+        uint8_t                                     adaptive_ref_pic_marking_mode_flag;
+        #if 1 /* adaptive_ref_pic_marking_mode_flag */
+            #if 1 /* do */
+                uint32_t                            memory_management_control_operation;
+                #if 1 /* memory_management_control_operation == 1 || memory_management_control_operation == 3 */
+                    uint8_t                         bValid_difference_of_pic_nums_minus1;
+                    uint32_t                        difference_of_pic_nums_minus1;
+                #endif
+                #if 1 /* memory_management_control_operation == 2 */
+                    uint8_t                         bValid_long_term_pic_num;
+                    uint32_t                        long_term_pic_num;
+                #endif
+                #if 1 /* memory_management_control_operation == 3 || memory_management_control_operation == 6 */
+                    uint8_t                         bValid_long_term_frame_idx;
+                    uint32_t                        long_term_frame_idx;
+                #endif
+                #if 1 /* memory_management_control_operation == 4 */
+                    uint8_t                         bValid_max_long_term_frame_idx_plus1;
+                    uint32_t                        max_long_term_frame_idx_plus1;
+                #endif
+            #endif /* while(memory_management_control_operation != 0) */
+        #endif
+    #endif
+} VIDEOH264PARAMETER_dec_ref_pic_marking, * PVIDEOH264PARAMETER_dec_ref_pic_marking;
+typedef const VIDEOH264PARAMETER_dec_ref_pic_marking* PCVIDEOH264PARAMETER_dec_ref_pic_marking;
+
+typedef struct tagVIDEOH264PARAMETER_slice_header {
+    uint8_t                                     nal_ref_idc;
+    uint8_t                                     nal_unit_type;
+    uint32_t                                    first_mb_in_slice;
+    uint32_t                                    slice_type;
+    uint32_t                                    pic_parameter_set_id;
+    #if 1 /* separate_colour_plane_flag == 1 */
+        uint8_t                                 colour_plane_id;
+    #endif
+    uint32_t                                    frame_num;
+    #if 1 /* !frame_mbs_only_flag，这个参数在 SPS 里 */
+        uint8_t                                 field_pic_flag;
+        #if 1 /* field_pic_flag */
+            uint8_t                             bottom_field_flag;
+        #endif
+    #endif
+    #if 1 /* IdrPicFlag，这个参数可以直接用 NAL 头里的 nal_unit_type 算出来：(nal_unit_type == 5) ? 1 : 0 */
+        uint32_t                                idr_pic_id;
+    #endif
+    #if 1 /* pic_order_cnt_type == 0，这个参数在 SPS 里 */
+        uint32_t                                pic_order_cnt_lsb;  // 这个参数的长度等于 log2_max_pic_order_cnt_lsb_minus4 + 4，SPS 里有这个参数
+        #if 1 /* bottom_field_pic_order_in_frame_present_flag && !field_pic_flag */
+            int32_t                             delta_pic_order_cnt_bottom;
+        #endif
+    #endif
+    #if 1 /* pic_order_cnt_type == 1 && !delta_pic_order_always_zero_flag */
+        #if 1 /* bottom_field_pic_order_in_frame_present_flag && !field_pic_flag  */
+            int32_t                             delta_pic_order_cnt[2];
+        #endif
+    #endif
+    #if 1 /* redundant_pic_cnt_present_flag */
+        uint32_t                                redundant_pic_cnt;
+    #endif
+    #if 1 /* slice_type == B */
+        uint8_t                                 direct_spatial_mv_pred_flag;
+    #endif
+    #if 1 /* slice_type == P || slice_type ==  SP || slice_type == B */
+        uint8_t                                 num_ref_idx_active_override_flag;
+        #if 1 /* num_ref_idx_active_override_flag */
+            uint32_t                            num_ref_idx_l0_active_minus1;
+        #endif
+            #if 1 /* slice_type == B */
+                uint32_t                        num_ref_idx_l1_active_minus1;
+            #endif
+    #endif
+    union {
+    #if 1 /* nal_unit_type == 20 || nal_unit_type == 21 */
+        VIDEOH264PARAMETER_ref_pic_list_mvc    ref_pic_list_mvc;
+    #endif
+    #if 1 /* else */
+        VIDEOH264PARAMETER_ref_pic_list        ref_pic_list;
+    #endif
+    };
+    #if 1 /* (weighted_pred_flag && (slice_type == P || slice_type == SP)) ||  (weighted_bipred_idc == 1 && slice_type == B) */
+        /* pred_weight_table */
+    #endif
+    #if 1 /* nal_ref_idc != 0 */
+        VIDEOH264PARAMETER_dec_ref_pic_marking  dec_ref_pic_marking;
+    #endif
+    #if 1 /* entropy_coding_mode_flag && slice_type != I && slice_type != SI */
+        uint32_t                                cabac_init_idc;
+    #endif
+    int32_t                                     slice_qp_delta;
+    #if 1 /* slice_type == SP || slice_type == SI */
+        #if 1 /* slice_type == SP */
+            uint8_t                             sp_for_switch_flag;
+        #endif
+        int32_t                                 slice_qs_delta;
+    #endif
+    #if 1 /* deblocking_filter_control_present_flag */
+        uint32_t                                disable_deblocking_filter_idc;
+        #if 1 /* disable_deblocking_filter_idc != 1 */
+            int32_t                             slice_alpha_c0_offset_div2;
+            int32_t                             slice_beta_offset_div2;
+        #endif
+    #endif
+    #if 1 /* num_slice_groups_minus1 > 0 && slice_group_map_type >= 3 && slice_group_map_type <= 5 */
+        uint32_t                                slice_group_change_cycle;
+    #endif
+} VIDEOH264PARAMETER_slice_header, * PVIDEOH264PARAMETER_slice_header;
+typedef const VIDEOH264PARAMETER_slice_header* PCVIDEOH264PARAMETER_slice_header;
+
+typedef struct tagVIDEOH264PARAMETER_slice_layer_without_partitioning {
+    struct {
+        HANSIZE                                 nCnt;
+        PVIDEOH264PARAMETER_seq_parameter_set   pSPS;
+    } SPS;
+    struct {
+        HANSIZE                                 nCnt;
+        PCVIDEOH264PARAMETER_pic_parameter_set  pPPS;
+    } PPS;
+    VIDEOH264PARAMETER_slice_header             slice_header;
+} VIDEOH264PARAMETER_slice_layer_without_partitioning, * PVIDEOH264PARAMETER_slice_layer_without_partitioning;
+typedef const VIDEOH264PARAMETER_slice_layer_without_partitioning* PCVIDEOH264PARAMETER_slice_layer_without_partitioning;
 #endif
 
-#if 1 /* SPS 转换后的信息 */
+#if 1 /* H264 转换后的信息 */
 typedef struct tagVIDEOH264INFOHRDPARAM {
     BOOL                            bValid;
     uint8_t                         nCPBCnt;
