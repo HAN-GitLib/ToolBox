@@ -68,6 +68,8 @@ HANPSTR GetMP4_free_FieldName(VIDEOMP4BOXFIELD_free eName)
 static const HANPSTR sg_pMP4_mdat_Name = TEXT("媒体数据");
 static const HANPSTR sg_pBoxFieldName_mdat[VIDEO_MP4_mdat_BOX_FIELD_CNT] = {
     [VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID] = TEXT("轨道索引"),
+    [VIDEO_MP4_mdat_BOX_FIELD_CHUNK_GROUP_ID] = TEXT("Chunk 组索引"),
+    [VIDEO_MP4_mdat_BOX_FIELD_CHUNK_ID] = TEXT("Chunk 索引"),
     [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID] = TEXT("样本索引"),
     [VIDEO_MP4_mdat_BOX_FIELD_OFFSET] = TEXT("距文件起始偏移量"),
     [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE] = TEXT("样本大小"),

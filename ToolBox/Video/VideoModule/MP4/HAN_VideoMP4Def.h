@@ -18,9 +18,9 @@ extern "C" {
 
 #define HAN_VIDEO_MP4_BOX_ENTRIES_INFO_MAX_CNT                      10
 
+#define HAN_VIDEO_MP4_CHOOSE_BOX_INFO_TRACK_LIST_HEIGHT             100
 #define HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_WIDTH             80
 #define HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_HEIGHT            22
-#define HAN_VIDEO_MP4_TRACK_ID_LIST_HEIGHT                          100
 
 #ifdef __cplusplus
 }

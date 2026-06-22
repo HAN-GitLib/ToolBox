@@ -47,6 +47,7 @@ typedef struct tagVIDEOMP4WNDEXTRA {
             BOOL                    bLock;
             HWND                    hText;
             HWND                    hInput;
+            HWND                    hUpDown;
         } sampleId;
         HTREEITEM                   hFileTree;
         VIDEOMP4BOXINFO             boxInfo;
@@ -108,7 +109,8 @@ static void UpdateBoxInfoBeforeSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp
 static BOOL UpdateBoxInfoAfterSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4Info);
 static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem);
 static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info);
-static void ChooseBoxInfoTrackSampleCallback(PVIDEOMP4WNDEXTRA mp4Info);
+static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info);
+static void ChooseBoxInfoSampleCallback(PVIDEOMP4WNDEXTRA mp4Info);
 
 static inline HANINT GetBoxInfoWindowWidth(void);
 static inline uint16_t ReadMP4Data2ByteMSB(const uint8_t pData[2]);
@@ -491,6 +493,11 @@ void RegisterHANVideoMP4(HINSTANCE hInst)
         .hIconSm        = NULL,
     };
     RegisterClassEx(&wcex);
+
+    INITCOMMONCONTROLSEX icex = {0};
+    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    icex.dwICC = ICC_UPDOWN_CLASS;
+    InitCommonControlsEx(&icex);
 }
 
 static LRESULT CALLBACK VideoMP4WndProc(HWND hVideoMP4, UINT message, WPARAM wParam, LPARAM lParam)
@@ -578,13 +585,13 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
         nWinY = VIDEO_WINDOW_DY;
         nWinW = HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_WIDTH;
         nWinH = HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_HEIGHT;
-        mp4Info->box.trackId.hText = CreateWindow(TEXT("static"), GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID),
+        mp4Info->box.trackId.hText = CreateWindow(TEXT("static"), TEXT("轨道 ID"),
             WS_CHILD | SS_CENTERIMAGE,
             nWinX, nWinY, nWinW, nWinH,
             hVideoMP4, (HMENU)WID_VIDEO_MP4_BOX_TRACK_ID_TEXT, hInst, NULL);
         nWinX += nWinW;
         nWinW = GetBoxInfoWindowWidth() - nWinW;
-        nWinH = HAN_VIDEO_MP4_TRACK_ID_LIST_HEIGHT;
+        nWinH = HAN_VIDEO_MP4_CHOOSE_BOX_INFO_TRACK_LIST_HEIGHT;
         mp4Info->box.trackId.hList = CreateWindow(TEXT("combobox"), NULL,
             WS_CHILD | WS_VSCROLL | CBS_DROPDOWNLIST,
             nWinX, nWinY, nWinW, nWinH,
@@ -594,7 +601,7 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
         nWinY += HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_HEIGHT + VIDEO_WINDOW_DY;
         nWinW = HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_WIDTH;
         nWinH = HAN_VIDEO_MP4_CHOOSE_BOX_INFO_SAMPLE_TEXT_HEIGHT;
-        mp4Info->box.sampleId.hText = CreateWindow(TEXT("static"), GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID),
+        mp4Info->box.sampleId.hText = CreateWindow(TEXT("static"), TEXT("样本索引"),
             WS_CHILD | SS_CENTERIMAGE,
             nWinX, nWinY, nWinW, nWinH,
             hVideoMP4, (HMENU)WID_VIDEO_MP4_BOX_SAMPLE_ID_TEXT, hInst, NULL);
@@ -604,6 +611,10 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
             WS_CHILD | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER,
             nWinX, nWinY, nWinW, nWinH,
             hVideoMP4, (HMENU)WID_VIDEO_MP4_BOX_SAMPLE_ID_INPUT, hInst, NULL);
+        mp4Info->box.sampleId.hUpDown = CreateWindow(UPDOWN_CLASS, TEXT(""),
+            WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_SETBUDDYINT | UDS_NOTHOUSANDS,
+            0, 0, 0, 0,
+            hVideoMP4, (HMENU)WID_VIDEO_MP4_BOX_SAMPLE_ID_UPDOWN, hInst, NULL);
 
         GetMP4BoxInfoWindowPos(mp4Info, &rcBoxInfoSize, VIDEO_MP4_BOX_TYPE_CNT);
         mp4Info->box.hInfo = CreateWindow(WC_LISTVIEW, TEXT("BOX信息"),
@@ -615,8 +626,6 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
         SendMessage(mp4Info->box.trackId.hList, WM_SETFONT, (WPARAM)(mp4Info->hFont.hSys), (LPARAM)TRUE);
         SendMessage(mp4Info->box.sampleId.hText, WM_SETFONT, (WPARAM)(mp4Info->hFont.hSys), (LPARAM)TRUE);
         SendMessage(mp4Info->box.sampleId.hInput, WM_SETFONT, (WPARAM)(mp4Info->hFont.hSys), (LPARAM)TRUE);
-            
-        ListView_SetExtendedListViewStyle(mp4Info->box.hInfo, LVS_EX_FULLROWSELECT);
 
         InitMP4BoxInfoWindow(mp4Info);
     }
@@ -658,10 +667,10 @@ static void CommandCallback(PVIDEOMP4WNDEXTRA mp4Info, WPARAM wParam)
 {
     switch (LOWORD(wParam)) {
         case WID_VIDEO_MP4_BOX_TRACK_ID_LIST: {
-            if (CBN_SELCHANGE == HIWORD(wParam)) { ChooseBoxInfoTrackSampleCallback(mp4Info); }
+            if (CBN_SELCHANGE == HIWORD(wParam)) { ChooseBoxInfoTrackCallback(mp4Info); }
         } break;
         case WID_VIDEO_MP4_BOX_SAMPLE_ID_INPUT: {
-            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { ChooseBoxInfoTrackSampleCallback(mp4Info); }
+            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { ChooseBoxInfoSampleCallback(mp4Info); }
         } break;
 
         default: { } break;
@@ -716,6 +725,9 @@ static void GetMP4BoxInfoWindowPos(PVIDEOMP4WNDEXTRA mp4Info, PRECT pPos, VIDEOM
 static void InitMP4BoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info)
 {
     LVCOLUMN lvTitle = { .mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM, };
+    
+    SendMessage(mp4Info->box.sampleId.hUpDown, UDM_SETBUDDY, (WPARAM)(mp4Info->box.sampleId.hInput), 0);
+    ListView_SetExtendedListViewStyle(mp4Info->box.hInfo, LVS_EX_FULLROWSELECT);
     
     for (VIDEOMP4BOXINFOHEADER iLoop = 0; iLoop < VIDEO_MP4_BOX_INFO_HEADER_CNT; iLoop++)
     {
@@ -1076,8 +1088,28 @@ static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info)
         if (VIDEO_MP4_TRACK_HANDLER_TYPE_VIDEO == eType) { nCursel = (HANINT)iLoop; }
     }
     ComboBoxSetCursel(mp4Info->box.trackId.hList, nCursel);
+    SendMessage(mp4Info->box.sampleId.hUpDown, UDM_SETRANGE32, (WPARAM)0, (LPARAM)(pTrack[nCursel].nSampleCnt - 1));
 }
-static void ChooseBoxInfoTrackSampleCallback(PVIDEOMP4WNDEXTRA mp4Info)
+static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info)
+{
+    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
+    HANINT nTrackId;
+    HANSIZE nTrackCnt;
+    HANSIZE nSampleCnt;
+
+    if (NULL != pTrack)
+    {
+        nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
+        nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
+        if ((0 <= nTrackId) && (nTrackId < (HANINT)nTrackCnt))
+        {
+            nSampleCnt = pTrack[nTrackId].nSampleCnt;
+            SendMessage(mp4Info->box.sampleId.hUpDown, UDM_SETRANGE32, (WPARAM)0, (LPARAM)(nSampleCnt - 1));
+            ChooseBoxInfoSampleCallback(mp4Info);
+        }
+    }
+}
+static void ChooseBoxInfoSampleCallback(PVIDEOMP4WNDEXTRA mp4Info)
 {
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     HANINT nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
@@ -1085,6 +1117,7 @@ static void ChooseBoxInfoTrackSampleCallback(PVIDEOMP4WNDEXTRA mp4Info)
     HANSIZE nSampleCnt;
     HANSIZE idSample;
     HANSIZE nTrackCnt;
+    DWORD nTextCursel;
 
     if (NULL != pTrack)
     {
@@ -1101,7 +1134,9 @@ static void ChooseBoxInfoTrackSampleCallback(PVIDEOMP4WNDEXTRA mp4Info)
             if (nSampleCnt <= idSample) { idSample = nSampleCnt - 1; }
             HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), idSample);
             pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE - 1] = TEXT('\0');
+            SendMessage(mp4Info->box.sampleId.hInput, EM_GETSEL, (WPARAM)&nTextCursel, (LPARAM)NULL);
             SetWindowText(mp4Info->box.sampleId.hInput, pText);
+            SendMessage(mp4Info->box.sampleId.hInput, EM_SETSEL, nTextCursel, nTextCursel);
 
             ListView_DeleteAllItems(mp4Info->box.hInfo);
             UpdateBoxInfoWindow_mdatSample(nTrackId, idSample, mp4Info);
@@ -1522,7 +1557,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stco64(PVIDEOMP4WNDEXTRA mp4Info)
     uint8_t nDataSize = pTrack->stco64.nDataSize;
     const uint8_t* pEntry = pTrack->stco64.pEntry;
     HANSIZE nEntrySize = pTrack->stco64.nEntrySize;
-    HANSIZE nOffset = 0;
+    HANSIZE nOffset;
     HANSIZE sOffset;
     uint32_t idChunk = 0;
     ULARGE_INTEGER ulOffset;
@@ -1535,7 +1570,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stco64(PVIDEOMP4WNDEXTRA mp4Info)
     }
     if (TRUE == bRet)
     {
-        (void)DecodeBoxDataReadDataByVersion(pEntry, nVersion, &ulOffset);
+        nOffset = DecodeBoxDataReadDataByVersion(pEntry, nVersion, &ulOffset);
         sOffset = ulOffset.QuadPart;
         for (HANSIZE iLoop = 0; iLoop < nSampleCnt; iLoop++)
         {
@@ -2481,9 +2516,17 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     sliceInfo.PPS.pPPS = pTrack[nTrackId].avcC.pps.pPPS;
     DecodeH264Parameter_slice_layer_without_partitioning(&pSampleData[4], ReadMP4Data4ByteMSB(pSampleData), &sliceInfo);
     
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), nTrackId);
+    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID), pText, nId, hListView);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSample->idChunkGroup);
+    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_CHUNK_GROUP_ID), pText, nId, hListView);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSample->idChunk);
+    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_CHUNK_ID), pText, nId, hListView);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), nSampleId);
+    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->sOffset);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_OFFSET), pText, nId, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSample->nSize);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u 字节"), pSample->nSize);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->timeDTS);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_DTS), pText, nId, hListView);
