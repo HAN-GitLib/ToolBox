@@ -71,6 +71,7 @@ static const HANPSTR sg_pBoxFieldName_mdat[VIDEO_MP4_mdat_BOX_FIELD_CNT] = {
     [VIDEO_MP4_mdat_BOX_FIELD_CHUNK_GROUP_ID] = TEXT("Chunk 组索引"),
     [VIDEO_MP4_mdat_BOX_FIELD_CHUNK_ID] = TEXT("Chunk 索引"),
     [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID] = TEXT("样本索引"),
+    [VIDEO_MP4_mdat_BOX_FIELD_KEY_FRAME_ID] = TEXT("关键帧索引"),
     [VIDEO_MP4_mdat_BOX_FIELD_OFFSET] = TEXT("距文件起始偏移量"),
     [VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE] = TEXT("样本大小"),
     [VIDEO_MP4_mdat_BOX_FIELD_DTS] = TEXT("DTS（解码时间）"),

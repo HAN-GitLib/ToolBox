@@ -110,7 +110,6 @@ static BOOL UpdateBoxInfoAfterSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4
 static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem);
 static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info);
 static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info);
-static void ChooseBoxInfoSampleCallback(PVIDEOMP4WNDEXTRA mp4Info);
 
 static inline HANINT GetBoxInfoWindowWidth(void);
 static inline uint16_t ReadMP4Data2ByteMSB(const uint8_t pData[2]);
@@ -670,7 +669,7 @@ static void CommandCallback(PVIDEOMP4WNDEXTRA mp4Info, WPARAM wParam)
             if (CBN_SELCHANGE == HIWORD(wParam)) { ChooseBoxInfoTrackCallback(mp4Info); }
         } break;
         case WID_VIDEO_MP4_BOX_SAMPLE_ID_INPUT: {
-            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { ChooseBoxInfoSampleCallback(mp4Info); }
+            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { UpdateBoxInfoWindow_mdat(NULL, mp4Info); }
         } break;
 
         default: { } break;
@@ -1105,43 +1104,7 @@ static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info)
         {
             nSampleCnt = pTrack[nTrackId].nSampleCnt;
             SendMessage(mp4Info->box.sampleId.hUpDown, UDM_SETRANGE32, (WPARAM)0, (LPARAM)(nSampleCnt - 1));
-            ChooseBoxInfoSampleCallback(mp4Info);
-        }
-    }
-}
-static void ChooseBoxInfoSampleCallback(PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
-    HANINT nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
-    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
-    HANSIZE nSampleCnt;
-    HANSIZE idSample;
-    HANSIZE nTrackCnt;
-    DWORD nTextCursel;
-
-    if (NULL != pTrack)
-    {
-        nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
-        if ((0 <= nTrackId) && (nTrackId < (HANINT)nTrackCnt))
-        {
-            mp4Info->box.sampleId.bLock = TRUE;
-
-            pTrack = &pTrack[nTrackId];
-            nSampleCnt = pTrack->nSampleCnt;
-
-            GetWindowText(mp4Info->box.sampleId.hInput, pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE);
-            idSample = HAN_strtoul(pText, NULL, 10);
-            if (nSampleCnt <= idSample) { idSample = nSampleCnt - 1; }
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), idSample);
-            pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE - 1] = TEXT('\0');
-            SendMessage(mp4Info->box.sampleId.hInput, EM_GETSEL, (WPARAM)&nTextCursel, (LPARAM)NULL);
-            SetWindowText(mp4Info->box.sampleId.hInput, pText);
-            SendMessage(mp4Info->box.sampleId.hInput, EM_SETSEL, nTextCursel, nTextCursel);
-
-            ListView_DeleteAllItems(mp4Info->box.hInfo);
-            UpdateBoxInfoWindow_mdatSample(nTrackId, idSample, mp4Info);
-
-            mp4Info->box.sampleId.bLock = FALSE;
+            UpdateBoxInfoWindow_mdat(NULL, mp4Info);
         }
     }
 }
@@ -1723,7 +1686,39 @@ static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
 static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
 {
     (void)pBoxTree;
-    UpdateBoxInfoWindow_mdatSample(0, 0, mp4Info);
+    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
+    HANINT nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
+    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
+    HANSIZE nSampleCnt;
+    HANSIZE idSample;
+    HANSIZE nTrackCnt;
+    DWORD nTextCursel;
+
+    if (NULL != pTrack)
+    {
+        nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
+        if ((0 <= nTrackId) && (nTrackId < (HANINT)nTrackCnt))
+        {
+            mp4Info->box.sampleId.bLock = TRUE;
+
+            pTrack = &pTrack[nTrackId];
+            nSampleCnt = pTrack->nSampleCnt;
+
+            GetWindowText(mp4Info->box.sampleId.hInput, pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE);
+            idSample = HAN_strtoul(pText, NULL, 10);
+            if (nSampleCnt <= idSample) { idSample = nSampleCnt - 1; }
+            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), idSample);
+            pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE - 1] = TEXT('\0');
+            SendMessage(mp4Info->box.sampleId.hInput, EM_GETSEL, (WPARAM)&nTextCursel, (LPARAM)NULL);
+            SetWindowText(mp4Info->box.sampleId.hInput, pText);
+            SendMessage(mp4Info->box.sampleId.hInput, EM_SETSEL, nTextCursel, nTextCursel);
+
+            ListView_DeleteAllItems(mp4Info->box.hInfo);
+            UpdateBoxInfoWindow_mdatSample(nTrackId, idSample, mp4Info);
+
+            mp4Info->box.sampleId.bLock = FALSE;
+        }
+    }
 }
 static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
 {
@@ -2524,6 +2519,8 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_CHUNK_ID), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), nSampleId);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_ID), pText, nId, hListView);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->idKeyFrame);
+    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_KEY_FRAME_ID), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->sOffset);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_OFFSET), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u ×Ö½Ú"), pSample->nSize);
@@ -2850,6 +2847,7 @@ static HANINT UpdateH264InfoWindow_Slice(PCVIDEOH264PARAMETER_slice_layer_withou
     uint8_t idrPicFlag = GetIdrPicFlag(pSlice->slice_header.nal_unit_type);
     VIDEOH264SLICETYPE sliceType = pSlice->slice_header.slice_type % VIDEO_H264_SLICE_TYPE_ALL;
 
+    /* slice_header */
     nRet = UpdateBoxInfoWindow_InsertLine(TEXT("Slice Header"), TEXT(""), nRet, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.nal_ref_idc);
     nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_ref_idc"), pText, nRet, hListView);
@@ -2978,6 +2976,12 @@ static HANINT UpdateH264InfoWindow_Slice(PCVIDEOH264PARAMETER_slice_layer_withou
     {
         HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.slice_group_change_cycle);
         nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_group_change_cycle"), pText, nRet, hListView);
+    }
+    /* slice_data */
+    if (0 != pPPS->entropy_coding_mode_flag)
+    {
+        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_data.cabac_alignment_one_bit.nLen);
+        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("cabac_alignment_one_bit Î»Êý"), pText, nRet, hListView);
     }
 
     return nRet;

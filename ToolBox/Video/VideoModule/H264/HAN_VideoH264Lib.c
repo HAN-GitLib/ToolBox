@@ -23,6 +23,7 @@ static inline VIDEOMP4READUERET H264ReadUE(PVIDEOMP4READUE pReadUE);
 static inline VIDEOMP4READUERET H264ReadSE(PVIDEOMP4READUE pReadUE);
 static inline uint8_t H264ReadUEBit(PVIDEOMP4READUE pReadUE);
 static inline uint32_t H264ReadUEBits(PVIDEOMP4READUE pReadUE, uint8_t nLen);
+static inline void H264AlignByte(PVIDEOMP4READUE pReadBit);
 static BOOL H264CheckMoreRbspData(PVIDEOMP4READUE pReadUE);
 
 static VIDEOMP4READUERET DecodeH264Parameter_seq_parameter_set_data_ProfileIdcExtendedData(PVIDEOH264PARAMETER_seq_parameter_set pSPS, PVIDEOMP4READUE pReadUE);
@@ -394,6 +395,13 @@ uint32_t DecodeH264Parameter_slice_layer_without_partitioning(const uint8_t* pDa
                     {
                         (void)H264ReadUE(&readUE); pSlice->slice_header.slice_group_change_cycle = readUE.cValue.u32;
                     }
+
+                    /* slice_data */
+                    if (0 != pPPS->entropy_coding_mode_flag)
+                    {
+                        pSlice->slice_data.cabac_alignment_one_bit.nLen = 8 - readUE.iBit;
+                        H264AlignByte(&readUE);
+                    }
                 }
             }
         }
@@ -619,6 +627,14 @@ static inline uint32_t H264ReadUEBits(PVIDEOMP4READUE pReadUE, uint8_t nLen)
     }
 
     return pReadUE->cValue.u32;
+}
+static inline void H264AlignByte(PVIDEOMP4READUE pReadBit)
+{
+    if (0 != pReadBit->iBit)
+    {
+        pReadBit->iByte++;
+        pReadBit->iBit = 0;
+    }
 }
 static BOOL H264CheckMoreRbspData(PVIDEOMP4READUE pReadUE)
 {

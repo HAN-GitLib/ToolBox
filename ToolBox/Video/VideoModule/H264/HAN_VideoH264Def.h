@@ -455,6 +455,15 @@ typedef struct tagVIDEOH264PARAMETER_slice_header {
 } VIDEOH264PARAMETER_slice_header, * PVIDEOH264PARAMETER_slice_header;
 typedef const VIDEOH264PARAMETER_slice_header* PCVIDEOH264PARAMETER_slice_header;
 
+typedef struct tagVIDEOH264PARAMETER_slice_data {
+    #if 1 /* entropy_coding_mode_flag */
+        struct {
+            uint8_t                             nLen;
+        } cabac_alignment_one_bit;
+    #endif
+} VIDEOH264PARAMETER_slice_data, * PVIDEOH264PARAMETER_slice_data;
+typedef const VIDEOH264PARAMETER_slice_data* PCVIDEOH264PARAMETER_slice_data;
+
 typedef struct tagVIDEOH264PARAMETER_slice_layer_without_partitioning {
     struct {
         HANSIZE                                 nCnt;
@@ -465,6 +474,7 @@ typedef struct tagVIDEOH264PARAMETER_slice_layer_without_partitioning {
         PCVIDEOH264PARAMETER_pic_parameter_set  pPPS;
     } PPS;
     VIDEOH264PARAMETER_slice_header             slice_header;
+    VIDEOH264PARAMETER_slice_data               slice_data;
 } VIDEOH264PARAMETER_slice_layer_without_partitioning, * PVIDEOH264PARAMETER_slice_layer_without_partitioning;
 typedef const VIDEOH264PARAMETER_slice_layer_without_partitioning* PCVIDEOH264PARAMETER_slice_layer_without_partitioning;
 #endif
