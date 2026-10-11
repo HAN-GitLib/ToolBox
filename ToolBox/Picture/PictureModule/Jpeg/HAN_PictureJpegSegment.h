@@ -9,11 +9,11 @@ extern "C" {
 
 #define PICTURE_JPEG_SEGMENT_INFO_LIST_ITEM_MAX         256
 
-#define PICTURE_JPEG_SEGMENT_SAMPLING_FACTOR_MAX        4   // JPEG 规范明确采样系数只能 1 - 4，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.2 的 Table B.2 中关于 Hi、Vi 的描述
-#define PICTURE_JPEG_SEGMENT_QT_MAX                     4   // JPEG 规范明确量化表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.1 的 Table B.4 中关于 Tq 的描述
-#define PICTURE_JPEG_SEGMENT_HT_MAX                     4   // JPEG 规范明确 Huffman 表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.2 的 Table B.5 中关于 Th 的描述
-#define PICTURE_JPEG_SEGMENT_MCU_BLOCK_MAX              10  // JPEG 规范明确单个 MCU 内块数最多 10 个，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.3 中对 Csj 的描述
-#define PICTURE_JPEG_SEGMENT_COMPONENT_MAX              10  // 分量数最大值，虽然规范说是可以 1 - 255，但考虑到 MCU 内最多 10 个块的规定，且 4 个以上分量实在用不到，所以这里取 10
+#define PICTURE_JPEG_SEGMENT_SAMPLING_FACTOR_MAX        4   // JPEG 标准明确采样系数只能 1 - 4，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.2 的 Table B.2 中关于 Hi、Vi 的描述
+#define PICTURE_JPEG_SEGMENT_QT_MAX                     4   // JPEG 标准明确量化表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.1 的 Table B.4 中关于 Tq 的描述
+#define PICTURE_JPEG_SEGMENT_HT_MAX                     4   // JPEG 标准明确 Huffman 表 ID 只能 0 - 3，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.4.2 的 Table B.5 中关于 Th 的描述
+#define PICTURE_JPEG_SEGMENT_MCU_BLOCK_MAX              10  // JPEG 标准明确单个 MCU 内块数最多 10 个，参考《CCITT Rec. T.81 (1992 E)》章节 B.2.3 中对 Csj 的描述
+#define PICTURE_JPEG_SEGMENT_COMPONENT_MAX              10  // 分量数最大值，虽然标准说是可以 1 - 255，但考虑到 MCU 内最多 10 个块的规定，且 4 个以上分量实在用不到，所以这里取 10
 
 typedef enum {
     PICTURE_JPEG_TYPE_UNKNOWN,

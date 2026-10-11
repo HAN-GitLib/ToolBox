@@ -6,7 +6,8 @@ extern "C" {
 #endif
 
 #include "..\..\HAN_VideoDef.h"
-#include "..\H264\HAN_VideoH264Def.h"
+#include "..\H264\HAN_VideoH264.h"
+#include "..\H264\HAN_VideoH264Text.h"
 
 typedef enum {
     VIDEO_MP4_BOX_TYPE_ftyp,
@@ -409,16 +410,16 @@ typedef struct tagVIDEOMP4BOXINFO_avcC {
     uint8_t                         nAvcLevelIndication;
     uint8_t                         nNALULengthSize;
     struct {
-        uint8_t                                     nNum;
-        PVIDEOH264PARAMETER_seq_parameter_set       pSPS;
-        HANSIZE                                     nSize;
-        const uint8_t*                              pList;
+        uint8_t                     nNum;
+        PVIDEOH264SPS               pSPS;
+        HANSIZE                     nSize;
+        const uint8_t*              pList;
     } sps;
     struct {
-        uint8_t                                     nNum;
-        PVIDEOH264PARAMETER_pic_parameter_set       pPPS;
-        HANSIZE                                     nSize;
-        const uint8_t*                              pList;
+        uint8_t                     nNum;
+        PVIDEOH264PPS               pPPS;
+        HANSIZE                     nSize;
+        const uint8_t*              pList;
     } pps;
 } VIDEOMP4BOXINFO_avcC, * PVIDEOMP4BOXINFO_avcC;
 

@@ -7,7 +7,7 @@ extern "C" {
 
 #include <stdint.h>
 
-#include "HAN_VideoH264Def.h"
+#include "HAN_VideoH264.h"
 
 HANPSTR GetH264_SPS_Name(void);
 HANPSTR GetH264_SPS_FieldName(VIDEOH264FIELDSPS eName);

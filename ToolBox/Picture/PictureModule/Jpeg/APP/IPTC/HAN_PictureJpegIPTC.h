@@ -8,9 +8,9 @@
  * 固定标记：
  *      固定为 0x1C
  * 记录编号：
- *      参考规范《IPTC-NAA Information Interchange Model Version No. 4.1》
+ *      参考标准《IPTC-NAA Information Interchange Model Version No. 4.1》
  * 数据集编号：
- *      参考规范《IPTC-NAA Information Interchange Model Version No. 4.1》
+ *      参考标准《IPTC-NAA Information Interchange Model Version No. 4.1》
  * 数据长度：
  *      标准格式和扩展格式的主要区别就在于数据长度的格式不同
  *      如果数据长度小于等于 32767（即 0x7FFF），那么采用标准格式

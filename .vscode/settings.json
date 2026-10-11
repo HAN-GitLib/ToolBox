@@ -101,6 +101,9 @@
         "HAN_VideoMP4Box.C": "cpp",
         "inttypes.h": "c",
         "han_videoh264": "c",
-        "han_videodef.h": "c"
+        "han_videodef.h": "c",
+        "han_videoh264def.h": "c",
+        "utility": "c",
+        "han_videoh264lib.h": "c"
     }
 }

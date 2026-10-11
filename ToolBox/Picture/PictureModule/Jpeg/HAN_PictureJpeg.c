@@ -2962,8 +2962,8 @@ static BOOL DecodeSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
 
     return bRet;
 }
-/* 参考了规范文档《CCITT Rec. T.81 (1992 E)》
- * 以下代码的注释中所参考的规范皆可查阅该文档
+/* 参考了标准文档《CCITT Rec. T.81 (1992 E)》
+ * 以下代码的注释中所参考的标准皆可查阅该文档
  */
 #if 1 /* 基线式 JPEG */
 static BOOL DecodeBaselineSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
@@ -3077,7 +3077,7 @@ static inline BOOL DecodeBaselineACHuffman(uint8_t nValue, PPICTUREJPEGDECODEMAC
     {
         nRRRR = (nValue >> 4) & 0x0F;
         nSSSS = nValue & 0x0F;
-        if (0 < nSSSS) // 标准的 RRRRSSSS 格式中 SSSS 必须大于 0 （参考规范 F.1.2.2.1 的图 F.1，第 90 页）
+        if (0 < nSSSS) // 标准的 RRRRSSSS 格式中 SSSS 必须大于 0 （参考标准 F.1.2.2.1 的图 F.1，第 90 页）
         {
             pDecode->nSpectral += nRRRR;
             if (pDecode->nSpectral < 64)
@@ -3159,9 +3159,9 @@ static void BaselineDequantizeBlock(PPICTUREJPEGWNDEXTRA jpegInfo)
 #endif
 #if 1 /* 渐进式 JPEG */
 /* 渐进式编码与基线式编码的主要区别在于：
- * 1.   DCT 变换后的频谱分开进行编码，DC 与 AC 总是分开编码，不同频率的 AC 也可以分开编码（参考规范 G.1.1.1.1，第121页）
+ * 1.   DCT 变换后的频谱分开进行编码，DC 与 AC 总是分开编码，不同频率的 AC 也可以分开编码（参考标准 G.1.1.1.1，第121页）
  * 2.   每个频谱允许多次扫描，第一次扫描可以对最高 N 比特进行编码，后续的细化扫描每次只编码 1 比特
- *      每次扫描时（包括首次扫描和后续细化扫描），先将 DCT 变换后每个频谱的值除以 2 的 Al 次方（规范中将这个右移操作称为点变换，参考124页第2段）
+ *      每次扫描时（包括首次扫描和后续细化扫描），先将 DCT 变换后每个频谱的值除以 2 的 Al 次方（标准中将这个右移操作称为点变换，参考124页第2段）
  *      然后取最低 N 位。对于首次扫描，N 就是商的全部位，对于细化扫描，N 就是最低位（也就是细化扫描只编码 1 比特）
  * 3.   对点变换后的结果进行编码
  */
@@ -3176,9 +3176,9 @@ static BOOL DecodeProgressiveSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
     uint8_t nAh;
     uint8_t nAl;
     /* 渐进式解码器主控程序基于以下规则：
-     * 1.   DC 系数与 AC 系数总是分开编码（参考规范 G.1.1.1.1，第121页）
+     * 1.   DC 系数与 AC 系数总是分开编码（参考标准 G.1.1.1.1，第121页）
      *      所以 DC 解码和 AC 解码分别调用不同的函数
-     * 2.   对于任意频带，都应从首次扫描（即 SOS 的 Ah = 0）开始，之后的扫描都应是逐 bit 细化（参考规范 G.1.1.1.2，第121页）
+     * 2.   对于任意频带，都应从首次扫描（即 SOS 的 Ah = 0）开始，之后的扫描都应是逐 bit 细化（参考标准 G.1.1.1.2，第121页）
      *      所以任意频带的首次扫描和细化扫描分别调用不同的函数
      * 基于以上规则，每次解码 SOS 的压缩数据时，根据 Ss、Se、Ah、Al 的情况，分别调用 4 种函数，且只会调用其中一种
      * 分别是 DC 首次扫描、DC 细化扫描、AC 首次扫描、AC 细化扫描
@@ -3203,7 +3203,7 @@ static BOOL DecodeProgressiveSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
                 {
                     if (0 == nAh) // 首次扫描 DC
                     {
-                        /* 首次扫描 DC 的方式与基线式 JPEG 基本相同（参考规范 G.1.1.2.1，第121页）
+                        /* 首次扫描 DC 的方式与基线式 JPEG 基本相同（参考标准 G.1.1.2.1，第121页）
                          * 主要区别在于：若 Al 不为 0
                          *      从编码器视角，需要将量化后的数据右移 Al 位，然后将移位后的 DC 值按基线式方法进行 Huffman 编码
                          *      从解码器的视角，则是将 Huffman 解码后的值移位后再进行反量化
@@ -3215,8 +3215,8 @@ static BOOL DecodeProgressiveSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
                     else // 细化扫描 DC
                     {
                         /* 无论是对 DC 第几次细化
-                         * 总是对移位后的最低有效位进行编码（参考规范 G.1.1.2.1，第121页）
-                         * 且不压缩（参考规范 G.1.2.1，第 2 段，第121页）
+                         * 总是对移位后的最低有效位进行编码（参考标准 G.1.1.2.1，第121页）
+                         * 且不压缩（参考标准 G.1.2.1，第 2 段，第121页）
                          * 即 DC 细化扫描是一个纯比特流，按照分量 0、1、2、0、1、2 …… 的顺序排列，每个比特就是对应分量移位前的第 Al 位
                          * 所以使用一个函数实现
                          */
@@ -3227,14 +3227,14 @@ static BOOL DecodeProgressiveSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
                 {
                     if (0 == nAh) // 首次扫描某段频谱的 AC
                     {
-                        /* 首次扫描 AC 的方式与基线式 JPEG 相似（参考规范 G.1.2.2，第121页）
+                        /* 首次扫描 AC 的方式与基线式 JPEG 相似（参考标准 G.1.2.2，第121页）
                          * 但在处理 Huffman 解码后的 RUN-SIZE 码时，有如下区别：
                          * 1.   若 SIZE ≠ 0，按正常的 RUN-SIZE 模式解码，即高 4 位是频谱值为 0 的个数，低 4 位是非 0 频谱需要读取的 bit 数
                          * 2.   若 SIZE = 0 且 SIZE ≠ 15（也就是非 ZRL），则按 EOBRUN 的模式解码
                          *      表示从当前 block 开始的 1 << RUN + Read(RUN) 个 block 都是 EOB，
                          *      Read(RUN) 就是读 RUN 个 bit，不做 VLI 转码
                          * 3.   ZRL（RUN = 15，SIZE = 0）正常解码，不按 EOBRUN 解码
-                         * 4.   备注：在基线式编码中，除了 EOB 和 ZRL 外，不可能出现 SIZE = 0（参考规范 F.1.2.2.1，第90页）
+                         * 4.   备注：在基线式编码中，除了 EOB 和 ZRL 外，不可能出现 SIZE = 0（参考标准 F.1.2.2.1，第90页）
                          *      因为 SIZE 为 0 的 VLI 码其值必然是 0，而 0 值应当在 RUN 中表述，不应在 SIZE 中体现，所以 0x10 ~ 0xE0（低 4 字节为 0）在基线式编码中是非法的
                          *      因此 0x10 ~ 0xE0 在渐进式编码中用来描述 EOBRUN，与渐进式不冲突
                          *      0x00 既可以表示 EOB，也可以表示 EOBRUN 中的 EOB0，两者效果相同
@@ -3244,18 +3244,18 @@ static BOOL DecodeProgressiveSOS(PPICTUREJPEGWNDEXTRA jpegInfo)
                     else // 细化扫描 AC
                     {
                         /* 细化扫描 AC 的 Huffman 码还是一样的查表法，但是 RUN-SIZE 的作用已经有很大的不同
-                         * 先对规范中提到的名词 zero history 和 non-zero history 做一下解释：
+                         * 先对标准中提到的名词 zero history 和 non-zero history 做一下解释：
                          *      zero history: 零历史，指某个系数在之前的扫描的结果一直是 0
                          *      non-zero history: 非零历史，指某个系数在之前的扫描已经得到了非 0 值
                          * 零历史具有如下特点：
-                         * 1.   如果零历史在某次扫描中初次得到非 0 值时，由于细化扫描只编码只编码 1 比特，所以这个值一定是 ±1，（参考规范 G.1.2.3，规则a，第125页）
-                         * 2.   Huffman 解码出来的 SIZE 指的就是这个 ±1 的 VLI 码的长度，它必然为 1（参考规范 G.1.2.3，第3段对 RRRRSSSS 的解释，第125页）
-                         * 3.   如果零历史在这次扫描中结果还是 0，那么它会被统计进入 RUN（参考规范 G.1.2.3，第3段对 RRRRSSSS 的解释，第125页）
+                         * 1.   如果零历史在某次扫描中初次得到非 0 值时，由于细化扫描只编码只编码 1 比特，所以这个值一定是 ±1，（参考标准 G.1.2.3，规则a，第125页）
+                         * 2.   Huffman 解码出来的 SIZE 指的就是这个 ±1 的 VLI 码的长度，它必然为 1（参考标准 G.1.2.3，第3段对 RRRRSSSS 的解释，第125页）
+                         * 3.   如果零历史在这次扫描中结果还是 0，那么它会被统计进入 RUN（参考标准 G.1.2.3，第3段对 RRRRSSSS 的解释，第125页）
                          * 非零历史具有如下特点：
                          * 1.   一旦某个系数有值了，那么在后续扫描中它就永远都是非零历史了（非 0 的数即使加上校正比特也不可能再变回 0 ）
-                         * 2.   由于非零历史已经有非 0 值了，所以校正位的解码方式就是简单的加上校正比特，不必再做 VLI 转码（参考规范 G.1.2.3，规则b，第125页）
+                         * 2.   由于非零历史已经有非 0 值了，所以校正位的解码方式就是简单的加上校正比特，不必再做 VLI 转码（参考标准 G.1.2.3，规则b，第125页）
                          * 3.   非零历史不再参与 RUN 的统计，也不由附加位来修正，它由附加位后面的校正位来修正
-                         * 根据规范，所有编码的非 0 系数（即 RUN-SIZE 中的 SIZE 所对应的系数）都是指从 0 值变成非 0 值，并且由于只细化 1 比特，所以这个非 0 值一定是 ±1
+                         * 根据标准，所有编码的非 0 系数（即 RUN-SIZE 中的 SIZE 所对应的系数）都是指从 0 值变成非 0 值，并且由于只细化 1 比特，所以这个非 0 值一定是 ±1
                          * RUN-SIZE 中的 RUN，ZRL，EOB，EOBRUN 计数的 0 都是针对在当前扫描中仍然是 0 的系数。
                          * 而非零历史系数（也就是在先前的扫描中已经有非 0 值的系数）则是作为校正位添加在这些编码的后面
                          */
