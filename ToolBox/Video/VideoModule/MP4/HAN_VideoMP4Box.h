@@ -10,6 +10,12 @@ extern "C" {
 #include "..\H264\HAN_VideoH264Text.h"
 
 typedef enum {
+    VIDEO_MP4_BOX_INFO_HEADER_FIELD,
+    VIDEO_MP4_BOX_INFO_HEADER_VALUE,
+    VIDEO_MP4_BOX_INFO_HEADER_CNT,
+} VIDEOMP4BOXINFOHEADER;
+
+typedef enum {
     VIDEO_MP4_BOX_TYPE_ftyp,
     VIDEO_MP4_BOX_TYPE_free,
     VIDEO_MP4_BOX_TYPE_mdat,
@@ -288,7 +294,7 @@ typedef enum {
 typedef struct tagVIDEOMP4BOX {
     HANSIZE                         nSize;
     HANSIZE                         nDataLen;
-    uint8_t                         pType[4];
+    uint8_t                         pType[5];
     VIDEOMP4BOXTYPE                 eType;
     const uint8_t*                  pData;
 } VIDEOMP4BOX, * PVIDEOMP4BOX;
@@ -423,13 +429,19 @@ typedef struct tagVIDEOMP4BOXINFO_avcC {
     } pps;
 } VIDEOMP4BOXINFO_avcC, * PVIDEOMP4BOXINFO_avcC;
 
-typedef struct tagVIDEOMP4BOXINFO_stsdSubBoxDefault {
+typedef struct tagVIDEOMP4BOXINFO_stblSubBoxDefault {
     const uint8_t*                  pRawData;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
     uint32_t                        nCnt;
     const uint8_t*                  pEntry;
     HANSIZE                         nEntrySize;
-} VIDEOMP4BOXINFO_stsdSubBoxDefault, * PVIDEOMP4BOXINFO_stsdSubBoxDefault;
+} VIDEOMP4BOXINFO_stblSubBoxDefault, * PVIDEOMP4BOXINFO_stblSubBoxDefault;
+
+typedef struct tagVIDEOMP4BOXINFO_stsd {
+    const uint8_t*                  pRawData;
+    VIDEOMP4BOXINFOFULLBOXVERFLAGS  fbVF;
+    uint32_t                        nDecoderCnt;
+} VIDEOMP4BOXINFO_stsd, * PVIDEOMP4BOXINFO_stsd;
 
 typedef struct tagVIDEOMP4BOXINFO_stsz {
     const uint8_t*                  pRawData;
@@ -474,139 +486,70 @@ typedef struct tagVIDEOMP4DECODEINFOSAMPLE {
     HANSIZE                         idDescription;
 } VIDEOMP4DECODEINFOSAMPLE, * PVIDEOMP4DECODEINFOSAMPLE;
 
-typedef struct tagVIDEOMP4TRACK {
-    VIDEOMP4BOXINFO_tkhd                tkhd;
-    VIDEOMP4BOXINFO_hdlr                hdlr;
-    VIDEOMP4BOXINFO_avc1                avc1;
-    VIDEOMP4BOXINFO_avcC                avcC;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault   stts;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault   ctts;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault   stss;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault   stsc;
-    VIDEOMP4BOXINFO_stsz                stsz;
-    VIDEOMP4BOXINFO_stco64              stco64;
-    HANSIZE                             nSampleCnt;
-    PVIDEOMP4DECODEINFOSAMPLE           pSample;
-} VIDEOMP4TRACK, * PVIDEOMP4TRACK;
+typedef void (*READMP4BOXCALLBACK)(PCVIDEOMP4BOX pBox, void* pParam);
 
-typedef struct tagVIDEOMP4BOXINFO {
-    struct {
-        HANSIZE                         nCnt;
-        HANSIZE                         nTargetId;
-        PVIDEOMP4TRACK                  pList;
-    } track;
-} VIDEOMP4BOXINFO, * PVIDEOMP4BOXINFO;
-typedef const VIDEOMP4BOXINFO* PCVIDEOMP4BOXINFO;
+HANSIZE ReadMP4Boxes(const uint8_t* pData, HANSIZE nLen, READMP4BOXCALLBACK ReadMP4BoxCallback, void* pParam);
+
+VIDEOMP4BOXTYPE GetMP4BoxType(const uint8_t* pType);
+
+HANINT UpdateBoxInfoWindow_InsertLine(HANPSTR pField, HANPSTR pValue, HANINT nId, HWND hListView);
 
 HANPSTR GetMP4BoxVersionName(uint8_t nVersion);
 
-HANPSTR GetMP4_ftyp_Name(void);
 HANPSTR GetMP4_ftyp_FieldName(VIDEOMP4BOXFIELD_ftyp eName);
 
-HANPSTR GetMP4_free_Name(void);
 HANPSTR GetMP4_free_FieldName(VIDEOMP4BOXFIELD_free eName);
 
-HANPSTR GetMP4_mdat_Name(void);
 HANPSTR GetMP4_mdat_FieldName(VIDEOMP4BOXFIELD_mdat eName);
 
-HANPSTR GetMP4_moov_Name(void);
-
-HANPSTR GetMP4_mvhd_Name(void);
 HANPSTR GetMP4_mvhd_FieldName(VIDEOMP4BOXFIELD_mvhd eName);
 
-HANPSTR GetMP4_iods_Name(void);
 HANPSTR GetMP4_iods_FieldName(VIDEOMP4BOXFIELD_iods eName);
 
-HANPSTR GetMP4_trak_Name(void);
-
-HANPSTR GetMP4_tkhd_Name(void);
 HANPSTR GetMP4_tkhd_FieldName(VIDEOMP4BOXFIELD_tkhd eName);
 void GetMP4_tkhd_FlagsName(uint32_t cFlags, HANPSTR pText, HANSIZE nLen);
 
-HANPSTR GetMP4_edts_Name(void);
-
-HANPSTR GetMP4_elst_Name(void);
-
-HANPSTR GetMP4_mdia_Name(void);
-
-HANPSTR GetMP4_mdhd_Name(void);
 HANPSTR GetMP4_mdhd_FieldName(VIDEOMP4BOXFIELD_mdhd eName);
 
-HANPSTR GetMP4_hdlr_Name(void);
 HANPSTR GetMP4_hdlr_FieldName(VIDEOMP4BOXFIELD_hdlr eName);
 HANPSTR GetMP4_hdlr_HandlerTypeName(VIDEOMP4TRACKHANDLERTYPE eType);
 
-HANPSTR GetMP4_minf_Name(void);
-
-HANPSTR GetMP4_vmhd_Name(void);
 HANPSTR GetMP4_vmhd_FieldName(VIDEOMP4BOXFIELD_vmhd eName);
 HANPSTR GetMP4_vmhd_GraphicsModeName(uint16_t cMode);
 
-HANPSTR GetMP4_dinf_Name(void);
-
-HANPSTR GetMP4_dref_Name(void);
-
-HANPSTR GetMP4_url__Name(void);
 HANPSTR GetMP4_url__FieldName(VIDEOMP4BOXFIELD_url_ eName);
 HANPSTR GetMP4_url__FlagsName(uint32_t cFlags);
 
-HANPSTR GetMP4_stbl_Name(void);
-
-HANPSTR GetMP4_stsd_Name(void);
-
-HANPSTR GetMP4_avc1_Name(void);
 HANPSTR GetMP4_avc1_FieldName(VIDEOMP4BOXFIELD_avc1 eName);
 
-HANPSTR GetMP4_avcC_Name(void);
 HANPSTR GetMP4_avcC_FieldName(VIDEOMP4BOXFIELD_avcC eName);
 HANPSTR GetMP4_avcC_ProfileIndicationName(uint8_t nProfileIndication);
 
-HANPSTR GetMP4_pasp_Name(void);
 HANPSTR GetMP4_pasp_FieldName(VIDEOMP4BOXFIELD_pasp eName);
 
-HANPSTR GetMP4_btrt_Name(void);
 HANPSTR GetMP4_btrt_FieldName(VIDEOMP4BOXFIELD_btrt eName);
 
-HANPSTR GetMP4_stts_Name(void);
 HANPSTR GetMP4_stts_FieldName(VIDEOMP4BOXFIELD_stts eName);
 
-HANPSTR GetMP4_ctts_Name(void);
 HANPSTR GetMP4_ctts_FieldName(VIDEOMP4BOXFIELD_ctts eName);
 
-HANPSTR GetMP4_stss_Name(void);
 HANPSTR GetMP4_stss_FieldName(VIDEOMP4BOXFIELD_stss eName);
 
-HANPSTR GetMP4_stsc_Name(void);
 HANPSTR GetMP4_stsc_FieldName(VIDEOMP4BOXFIELD_stsc eName);
 
-HANPSTR GetMP4_stsz_Name(void);
 HANPSTR GetMP4_stsz_FieldName(VIDEOMP4BOXFIELD_stsz eName);
 
-HANPSTR GetMP4_stco_Name(void);
 HANPSTR GetMP4_stco_FieldName(VIDEOMP4BOXFIELD_stco eName);
 
-HANPSTR GetMP4_smhd_Name(void);
 HANPSTR GetMP4_smhd_FieldName(VIDEOMP4BOXFIELD_smhd eName);
 
-HANPSTR GetMP4_mp4a_Name(void);
 HANPSTR GetMP4_mp4a_FieldName(VIDEOMP4BOXFIELD_mp4a eName);
 HANPSTR GetMP4_mp4a_ChannelCountName(uint16_t nCnt);
 
-HANPSTR GetMP4_esds_Name(void);
-
-HANPSTR GetMP4_udta_Name(void);
-
-HANPSTR GetMP4_meta_Name(void);
-
-HANPSTR GetMP4_ilst_Name(void);
-
-HANPSTR GetMP4_data_Name(void);
 HANPSTR GetMP4_data_FieldName(VIDEOMP4BOXFIELD_data eName);
 HANPSTR GetMP4_data_DataTypeName(uint32_t cType);
 
-HANPSTR GetMP4_desc_Name(void);
 
-HANPSTR GetMP4_Copyright_too_Name(void);
 
 #ifdef __cplusplus
 }

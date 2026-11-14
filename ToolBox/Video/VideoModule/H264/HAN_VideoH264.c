@@ -1133,7 +1133,7 @@ static VIDEOH264READBITRET DecodeH264SliceProcess(PVIDEOH264DECODER pDecoder)
     PVIDEOH264PARAMETER_slice_data pSliceData = &(pSlice->slice_data);
     HANPSIZE pCurrMbAddr = &(pDecodeInfo->CurrMbAddr);
     PVIDEOH264MACROBLOCK pMacroBlock = &(pPicInfo->pMacroBlock[*pCurrMbAddr]);
-    uint32_t slice_type;
+    VIDEOH264SLICETYPE slice_type;
     uint8_t moreDataFlag;
     uint8_t prevMbSkipped;
 

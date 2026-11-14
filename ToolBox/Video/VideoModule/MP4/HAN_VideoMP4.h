@@ -9,7 +9,6 @@ extern "C" {
 #include <Windows.h>
 
 #include "..\..\HAN_VideoDef.h"
-#include "HAN_VideoMP4Def.h"
 
 #define HAN_VIDEO_MP4_CLASS                         TEXT("HAN_VideoMP4")
 

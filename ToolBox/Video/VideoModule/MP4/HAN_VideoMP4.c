@@ -9,28 +9,35 @@
 #include <CommCtrl.h>
 
 #include "HAN_VideoMP4.h"
+#include "HAN_VideoMP4Def.h"
 #include "HAN_VideoMP4Box.h"
+#include "DecoderModule\HAN_VideoMP4Decoder.h"
+
 #include "..\H264\HAN_VideoH264.h"
 #include "..\H264\HAN_VideoH264Text.h"
 
-typedef enum {
-    VIDEO_MP4_BOX_INFO_HEADER_FIELD,
-    VIDEO_MP4_BOX_INFO_HEADER_VALUE,
-    VIDEO_MP4_BOX_INFO_HEADER_CNT,
-} VIDEOMP4BOXINFOHEADER;
+typedef struct tagVIDEOMP4TRACK {
+    VIDEOMP4BOXINFO_tkhd                tkhd;
+    VIDEOMP4BOXINFO_hdlr                hdlr;
+    VIDEOMP4BOXINFO_stblSubBoxDefault   stts;
+    VIDEOMP4BOXINFO_stblSubBoxDefault   ctts;
+    VIDEOMP4BOXINFO_stblSubBoxDefault   stss;
+    VIDEOMP4BOXINFO_stblSubBoxDefault   stsc;
+    VIDEOMP4BOXINFO_stsz                stsz;
+    VIDEOMP4BOXINFO_stco64              stco64;
+    HANSIZE                             nSampleCnt;
+    PVIDEOMP4DECODEINFOSAMPLE           pSample;
+    VIDEOMP4DECODER                     decoder;
+} VIDEOMP4TRACK, * PVIDEOMP4TRACK;
 
-typedef struct tagVIDEOMP4BOXTREE {
-    HTREEITEM                       hItem;
-    VIDEOMP4BOX                     mp4Box;
-    struct tagVIDEOMP4BOXTREE*      pParent;
-} VIDEOMP4BOXTREE, * PVIDEOMP4BOXTREE;
-
-typedef struct tagVIDEOMP4READBOXMACHINE {
-    const uint8_t*                  pData;
-    HANSIZE                         nLen;
-    HANPSIZE                        pBoxCnt;
-    PVIDEOMP4BOXTREE                pTree;
-} VIDEOMP4READBOXMACHINE, * PVIDEOMP4READBOXMACHINE;
+typedef struct tagVIDEOMP4BOXINFO {
+    struct {
+        PVIDEOMP4TRACK                  pList;
+        HANSIZE                         nCnt;
+        HANSIZE                         nTargetId;
+    } track;
+} VIDEOMP4BOXINFO, * PVIDEOMP4BOXINFO;
+typedef const VIDEOMP4BOXINFO* PCVIDEOMP4BOXINFO;
 
 typedef struct tagVIDEOMP4WNDEXTRA {
     HANDLE                          hHeap;
@@ -59,13 +66,9 @@ typedef struct tagVIDEOMP4WNDEXTRA {
         } map;
     } box;
     struct {
-        HANSIZE                     nSPSCnt;
-        HANSIZE                     nPPSCnt;
         HANSIZE                     nSampleCnt;
-        HANSIZE                     nMacroBlockSize;
-        HANSIZE                     nH264BufSize;
     } size;
-    VIDEOH264PICTUREINFO                decoder;
+    VIDEOMP4DECODER                 decoder;
     struct {
         HFONT                       hHex;
         HFONT                       hSys;
@@ -75,19 +78,32 @@ typedef struct tagVIDEOMP4WNDEXTRA {
 } VIDEOMP4WNDEXTRA, *PVIDEOMP4WNDEXTRA;
 
 typedef struct tagVIDEOMP4BOXTYPEINFO {
-    PCHAR                           pType;
-    HANPSTR                         (*GetBoxName)(void);
+    HANPSTR                         pName;
     HANSIZE                         nReadSubBoxOffset;
-    void                            (*UpdateBoxInfoWindow)(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);   // 可以填 NULL 来填充纯数据
+    UPDATEBOXINFOWINDOWCALLBACK     UpdateBoxInfoWindow;    // 可以填 NULL 来填充纯数据
 } VIDEOMP4BOXTYPEINFO;
+
+typedef struct tagVIDEOMP4BOXGETSIZE {
+    PVIDEOMP4WNDEXTRA               mp4Info;
+    VIDEOMP4DECODERTYPE             decoderType;
+    HANPSIZE                        pBoxCnt;
+    HANPSIZE                        pDecoderCnt;
+    HANPSIZE                        pDecoderSize;
+} VIDEOMP4BOXGETSIZE, * PVIDEOMP4BOXGETSIZE;
+
+typedef struct tagVIDEOMP4BOXPROCESS {
+    PVIDEOMP4WNDEXTRA               mp4Info;
+    PVIDEOMP4BOXTREE                pTree;
+    VIDEOMP4DECODERTYPE             decoderType;
+    uint8_t*                        pDecoder;
+    HANPSIZE                        pBoxCnt;
+    HANPSIZE                        pDecoderCnt;
+    HANPSIZE                        pDecoderBufOffset;
+} VIDEOMP4BOXPROCESS, * PVIDEOMP4BOXPROCESS;
 
 typedef struct tagVIDEOMP4BOXTRACKHANDLERINFO {
     uint8_t                         pType[5];
 } VIDEOMP4BOXTRACKHANDLERINFO;
-
-typedef struct tagVIDEOMP4BOXPROFILEIDCINFO {
-    HANPSTR                         pName;
-} VIDEOMP4BOXPROFILEIDCINFO;
 
 static LRESULT CALLBACK VideoMP4WndProc(HWND hVideoMP4, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -99,86 +115,70 @@ static void InitMP4BoxInfo(PVIDEOMP4WNDEXTRA mp4Info);
 static void GetMP4BoxInfoWindowPos(PVIDEOMP4WNDEXTRA mp4Info, PRECT pPos, VIDEOMP4BOXTYPE boxType);
 static void InitMP4BoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info);
 static void InitMP4BoxTreeWindow(PVIDEOMP4WNDEXTRA mp4Info);
-static HANSIZE MP4Process(const uint8_t* pData, HANSIZE nLen, PVIDEOMP4WNDEXTRA mp4Info);
-static HANSIZE ReadMP4Box(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info);
-static HANSIZE ReadMP4Boxes(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxTreeMap(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info);
+static void UpdateBoxTreeMap(PVIDEOMP4BOXPROCESS pProcess, PVIDEOMP4WNDEXTRA mp4Info);
 static void PrintMP4Text4Bytes(HANCHAR pDest[5], const uint8_t pSrc[4]);
-static VIDEOMP4BOXTYPE GetMP4BoxType(const uint8_t* pType);
 static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info);
 static void VideoMP4PrintHexData(HANPSTR pText, HANSIZE nTextLen, const uint8_t* pData, HANSIZE nDataLen);
 static LRESULT BoxTreeNotifyCallback(PVIDEOMP4WNDEXTRA mp4Info, NMHDR* pNotify);
 static void UpdateBoxInfoPos(PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoBeforeSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateBoxInfoAfterSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateH264BufSize(PVIDEOMP4BOXINFO_avcC pavcC, PVIDEOMP4WNDEXTRA mp4Info);
 static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem);
 static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info);
 static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info);
+
+static BOOL GetMP4InfoSize(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL MP4Process(PVIDEOMP4WNDEXTRA mp4Info);
+static void ReadMP4BoxCallback_GetSize(PCVIDEOMP4BOX pBox, void* pParam);
+static void ReadMP4BoxCallback_GetSize_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXGETSIZE pGetSize);
+static void ReadMP4BoxCallback_GetSize_DecoderBox(PCVIDEOMP4BOX pBox, void* pParam);
+static void ReadMP4BoxCallback_Process(PCVIDEOMP4BOX pBox, void* pParam);
+static void ReadMP4BoxCallback_Process_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXPROCESS pProcess);
+static void ReadMP4BoxCallback_Process_DecoderBox(PCVIDEOMP4BOX pBox, void* pParam);
 
 static inline HANINT GetBoxInfoWindowWidth(void);
 static inline uint16_t ReadMP4Data2ByteMSB(const uint8_t pData[2]);
 static inline uint32_t ReadMP4Data3ByteMSB(const uint8_t pData[3]);
 static inline uint32_t ReadMP4Data4ByteMSB(const uint8_t pData[4]);
 
-static void UpdateMP4InfoBeforeSubBoxes_trak(PVIDEOMP4WNDEXTRA mp4Info);
+static void ReadMP4BoxCallback_ProcessInittrak(PVIDEOMP4WNDEXTRA mp4Info, PVIDEOMP4BOXPROCESS pProcess);
 
-static BOOL UpdateMP4InfoAfterSubBoxes_trak(PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateMP4InfoAfterSubBoxes_avcC(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_stts(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_ctts(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_stss(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_stsc(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_stsz(PVIDEOMP4WNDEXTRA mp4Info);
-static BOOL UpdateMP4InfoAfterSubBoxes_stco64(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_trakProcess(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_stts(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_ctts(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_stss(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_stsc(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_stsz(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL UpdateMP4Info_stco64(PVIDEOMP4WNDEXTRA mp4Info);
 
-static HANINT UpdateBoxInfoWindow_InsertLine(HANPSTR pField, HANPSTR pValue, HANINT nId, HWND hListView);
 static HANINT UpdateBoxInfoWindow_FullBoxVersionFlags(HANINT nId, HWND hListView, PVIDEOMP4BOXINFOFULLBOXVERFLAGS pFB);
 static HANINT UpdateBoxInfoWindow_BlankBox(const uint8_t* pData, HANSIZE nLen, HANINT nId, HWND hListView);
 static void UpdateBoxInfoWindow_PrintTimeDuration(HANPSTR pText, HANSIZE nLen, PULARGE_INTEGER pTimeDuration);
-static void UpdateBoxInfoWindow_SetTitle(VIDEOMP4BOXTYPE eType, HWND hListView);
+static void UpdateBoxInfoWindow_SetTitle(PVIDEOMP4BOXTREE pBoxTree, HWND hListView);
 static void UpdateBoxInfoWindow_Default(PVIDEOMP4BOXTREE pBoxTree, HWND hListView);
-static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_iods(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_tkhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_elst(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_mdhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_hdlr(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_vmhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_dref(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_url_(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stsd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_avc1(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_avcC(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_pasp(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_btrt(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_ctts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stss(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stsc(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stsz(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_stco(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_co64(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_smhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_mp4a(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_meta(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
-static void UpdateBoxInfoWindow_data(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info);
+static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_iods(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_tkhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_elst(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_mdhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_hdlr(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_vmhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_dref(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_url_(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stsd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stts(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_ctts(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stss(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stsc(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stsz(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_stco(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_co64(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_smhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_meta(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
+static void UpdateBoxInfoWindow_data(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
 
 static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, PVIDEOMP4WNDEXTRA mp4Info);
-
-static HANINT UpdateH264InfoWindow_SPS(PCVIDEOH264SPS pSPS, HWND hListView, HANINT nStartId);
-static HANINT UpdateH264InfoWindow_VUIParam(PCVIDEOH264PARAMETER_vui_parameters pVUI, HWND hListView, HANINT nStartId);
-static HANINT UpdateH264InfoWindow_HRDParam(PCVIDEOH264PARAMETER_hrd_parameters pHRD, HANPCSTR pHeader, HWND hListView, HANINT nStartId);
-
-static HANINT UpdateH264InfoWindow_PPS(PCVIDEOH264PPS pPPS, HWND hListView, HANINT nStartId);
-
-static HANINT UpdateH264InfoWindow_Slice(PCVIDEOH264SLICE pSlice, HWND hListView, HANINT nStartId);
-static HANINT UpdateH264InfoWindow_RefPicListMVCModification(PCVIDEOH264PARAMETER_ref_pic_list_mvc pRefPicListMVC, uint32_t sliceType, HWND hListView, HANINT nStartId);
-static HANINT UpdateH264InfoWindow_RefPicListModification(PCVIDEOH264PARAMETER_ref_pic_list pRefPicList, uint32_t sliceType, HWND hListView, HANINT nStartId);
-static HANINT UpdateH264InfoWindow_DecRefPicMarking(PCVIDEOH264PARAMETER_dec_ref_pic_marking pDecRefPicMarking, uint8_t idrPicFlag, HWND hListView, HANINT nStartId);
 
 static HANSIZE DecodeBoxDataReadDataByVersion(const uint8_t* pData, uint8_t nVersion, PULARGE_INTEGER pLargeInt);
 static HANSIZE DecodeBoxDataDateTime(const uint8_t* pData, uint8_t nVersion, PVIDEOMP4BOXINFODATETIME pDateTime);
@@ -191,16 +191,11 @@ static void DecodeBoxData_hdlr(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_hdlr phdlr);
 static void DecodeBoxData_vmhd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_vmhd pvmhd);
 static VIDEOMP4TRACKHANDLERTYPE DecodeBoxDataGetTrackHandlerType(uint8_t pType[4]);
 static BOOL DecodeBoxData_url_(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_url_ purl_);
-static void DecodeBoxData_avc1(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_avc1 pavc1);
-static void DecodeBoxData_avcC(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_avcC pavcC);
-static void DecodeBoxData_stsdSubBoxDefault(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsdSubBoxDefault pDef);
+static void DecodeBoxData_stblSubBoxDefault(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stblSubBoxDefault pDef);
+static void DecodeBoxData_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsd pstsd);
 static void DecodeBoxData_stsz(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsz pstsz);
 static void DecodeBoxData_stco(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pstco);
 static void DecodeBoxData_co64(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pco64);
-static void DecodeBoxData_mp4a(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_mp4a pmp4a);
-
-static void DecodeBoxData_avcC_SPS(const uint8_t* pData, HANSIZE nLen, PVIDEOH264SPS pSPS);
-static void DecodeBoxData_avcC_PPS(const uint8_t* pData, HANSIZE nLen, PVIDEOH264PPS pPPS);
 
 static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame);
 
@@ -231,244 +226,174 @@ static const VIDEOMP4BOXTRACKHANDLERINFO sg_pMP4BoxTrackHandlerInfo[VIDEO_MP4_TR
         .pType = "tmcd",
     },
 };
-static const VIDEOMP4BOXTYPEINFO sg_pMP4BoxType[VIDEO_MP4_BOX_TYPE_CNT] = {
+static const VIDEOMP4BOXTYPEINFO sg_pMP4BoxTypeInfo[VIDEO_MP4_BOX_TYPE_CNT] = {
     [VIDEO_MP4_BOX_TYPE_ftyp] = {
-        .pType = "ftyp",
-        .GetBoxName = GetMP4_ftyp_Name,
+        .pName = TEXT("文件类型"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_ftyp,
     },
     [VIDEO_MP4_BOX_TYPE_free] = {
-        .pType = "free",
-        .GetBoxName = GetMP4_free_Name,
+        .pName = TEXT("占位符"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_free,
     },
     [VIDEO_MP4_BOX_TYPE_mdat] = {
-        .pType = "mdat",
-        .GetBoxName = GetMP4_mdat_Name,
+        .pName = TEXT("媒体数据"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_mdat,
     },
     [VIDEO_MP4_BOX_TYPE_moov] = {
-        .pType = "moov",
-        .GetBoxName = GetMP4_moov_Name,
+        .pName = TEXT("媒体元数据信息"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_mvhd] = {
-        .pType = "mvhd",
-        .GetBoxName = GetMP4_mvhd_Name,
+        .pName = TEXT("媒体数据头"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_mvhd,
     },
     [VIDEO_MP4_BOX_TYPE_iods] = {
-        .pType = "iods",
-        .GetBoxName = GetMP4_iods_Name,
+        .pName = TEXT("初始对象描述符"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_iods,
     },
     [VIDEO_MP4_BOX_TYPE_trak] = {
-        .pType = "trak",
-        .GetBoxName = GetMP4_trak_Name,
+        .pName = TEXT("轨道数据信息"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_tkhd] = {
-        .pType = "tkhd",
-        .GetBoxName = GetMP4_tkhd_Name,
+        .pName = TEXT("轨道全局属性"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_tkhd,
     },
     [VIDEO_MP4_BOX_TYPE_edts] = {
-        .pType = "edts",
-        .GetBoxName = GetMP4_edts_Name,
+        .pName = TEXT("编辑列表容器"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_elst] = {
-        .pType = "elst",
-        .GetBoxName = GetMP4_elst_Name,
+        .pName = TEXT("编辑列表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_elst,
     },
     [VIDEO_MP4_BOX_TYPE_mdia] = {
-        .pType = "mdia",
-        .GetBoxName = GetMP4_mdia_Name,
+        .pName = TEXT("轨道媒体信息容器"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_mdhd] = {
-        .pType = "mdhd",
-        .GetBoxName = GetMP4_mdhd_Name,
+        .pName = TEXT("轨道媒体独立信息"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_mdhd,
     },
     [VIDEO_MP4_BOX_TYPE_hdlr] = {
-        .pType = "hdlr",
-        .GetBoxName = GetMP4_hdlr_Name,
+        .pName = TEXT("轨道媒体独立信息"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_hdlr,
     },
     [VIDEO_MP4_BOX_TYPE_minf] = {
-        .pType = "minf",
-        .GetBoxName = GetMP4_minf_Name,
+        .pName = TEXT("轨道媒体信息"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_vmhd] = {
-        .pType = "vmhd",
-        .GetBoxName = GetMP4_vmhd_Name,
+        .pName = TEXT("视频媒体头"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_vmhd,
     },
     [VIDEO_MP4_BOX_TYPE_dinf] = {
-        .pType = "dinf",
-        .GetBoxName = GetMP4_dinf_Name,
+        .pName = TEXT("数据位置信息"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_dref] = {
-        .pType = "dref",
-        .GetBoxName = GetMP4_dref_Name,
+        .pName = TEXT("数据引用"),
         .nReadSubBoxOffset = 8,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_dref,
     },
     [VIDEO_MP4_BOX_TYPE_url_] = {
-        .pType = "url ",
-        .GetBoxName = GetMP4_url__Name,
+        .pName = TEXT("数据入口Url"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_url_,
     },
     [VIDEO_MP4_BOX_TYPE_stbl] = {
-        .pType = "stbl",
-        .GetBoxName = GetMP4_stbl_Name,
+        .pName = TEXT("样本索引表"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_stsd] = {
-        .pType = "stsd",
-        .GetBoxName = GetMP4_stsd_Name,
+        .pName = TEXT("解码器信息"),
         .nReadSubBoxOffset = 8,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stsd,
     },
-    [VIDEO_MP4_BOX_TYPE_avc1] = {
-        .pType = "avc1",
-        .GetBoxName = GetMP4_avc1_Name,
-        .nReadSubBoxOffset = 78,
-        .UpdateBoxInfoWindow = UpdateBoxInfoWindow_avc1,
-    },
-    [VIDEO_MP4_BOX_TYPE_avcC] = {
-        .pType = "avcC",
-        .GetBoxName = GetMP4_avcC_Name,
-        .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
-        .UpdateBoxInfoWindow = UpdateBoxInfoWindow_avcC,
-    },
-    [VIDEO_MP4_BOX_TYPE_pasp] = {
-        .pType = "pasp",
-        .GetBoxName = GetMP4_pasp_Name,
-        .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
-        .UpdateBoxInfoWindow = UpdateBoxInfoWindow_pasp,
-    },
-    [VIDEO_MP4_BOX_TYPE_btrt] = {
-        .pType = "btrt",
-        .GetBoxName = GetMP4_btrt_Name,
-        .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
-        .UpdateBoxInfoWindow = UpdateBoxInfoWindow_btrt,
-    },
     [VIDEO_MP4_BOX_TYPE_stts] = {
-        .pType = "stts",
-        .GetBoxName = GetMP4_stts_Name,
+        .pName = TEXT("解码时间-样本映射表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stts,
     },
     [VIDEO_MP4_BOX_TYPE_ctts] = {
-        .pType = "ctts",
-        .GetBoxName = GetMP4_ctts_Name,
+        .pName = TEXT("合成时间-样本映射表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_ctts,
     },
     [VIDEO_MP4_BOX_TYPE_stss] = {
-        .pType = "stss",
-        .GetBoxName = GetMP4_stss_Name,
+        .pName = TEXT("同步样本表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stss,
     },
     [VIDEO_MP4_BOX_TYPE_stsc] = {
-        .pType = "stsc",
-        .GetBoxName = GetMP4_stsc_Name,
+        .pName = TEXT("样本与块映射表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stsc,
     },
     [VIDEO_MP4_BOX_TYPE_stsz] = {
-        .pType = "stsz",
-        .GetBoxName = GetMP4_stsz_Name,
+        .pName = TEXT("样本大小表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stsz,
     },
     [VIDEO_MP4_BOX_TYPE_stco] = {
-        .pType = "stco",
-        .GetBoxName = GetMP4_stco_Name,
+        .pName = TEXT("块偏移表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_stco,
     },
     [VIDEO_MP4_BOX_TYPE_co64] = {
-        .pType = "co64",
-        .GetBoxName = GetMP4_stco_Name,
+        .pName = TEXT("块偏移表"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_co64,
     },
     [VIDEO_MP4_BOX_TYPE_smhd] = {
-        .pType = "smhd",
-        .GetBoxName = GetMP4_smhd_Name,
+        .pName = TEXT("音频媒体头"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_smhd,
     },
-    [VIDEO_MP4_BOX_TYPE_mp4a] = {
-        .pType = "mp4a",
-        .GetBoxName = GetMP4_mp4a_Name,
-        .nReadSubBoxOffset = 28,
-        .UpdateBoxInfoWindow = UpdateBoxInfoWindow_mp4a,
-    },
-    [VIDEO_MP4_BOX_TYPE_esds] = {
-        .pType = "esds",
-        .GetBoxName = GetMP4_esds_Name,
-        .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
-        .UpdateBoxInfoWindow = NULL,
-    },
     [VIDEO_MP4_BOX_TYPE_udta] = {
-        .pType = "udta",
-        .GetBoxName = GetMP4_udta_Name,
+        .pName = TEXT("用户数据"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_meta] = {
-        .pType = "meta",
-        .GetBoxName = GetMP4_meta_Name,
+        .pName = TEXT("元数据"),
         .nReadSubBoxOffset = 4,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_meta,
     },
     [VIDEO_MP4_BOX_TYPE_ilst] = {
-        .pType = "ilst",
-        .GetBoxName = GetMP4_ilst_Name,
+        .pName = TEXT("条目列表"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_data] = {
-        .pType = "data",
-        .GetBoxName = GetMP4_data_Name,
+        .pName = TEXT("数据"),
         .nReadSubBoxOffset = HAN_VIDEO_MP4_INVALID_SIZE,
         .UpdateBoxInfoWindow = UpdateBoxInfoWindow_data,
     },
     [VIDEO_MP4_BOX_TYPE_desc] = {
-        .pType = "desc",
-        .GetBoxName = GetMP4_desc_Name,
+        .pName = TEXT("描述"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
     [VIDEO_MP4_BOX_TYPE_Copyright_too] = {
-        .pType = "\xA9too",
-        .GetBoxName = GetMP4_Copyright_too_Name,
+        .pName = TEXT("版权信息"),
         .nReadSubBoxOffset = 0,
         .UpdateBoxInfoWindow = NULL,
     },
@@ -478,7 +403,7 @@ BOOL CheckMP4Type(const uint8_t* pData, HANSIZE nLen)
 {
     BOOL bRet = FALSE;
 
-    if ((8 <= nLen) && (!memcmp(&pData[4], sg_pMP4BoxType[VIDEO_MP4_BOX_TYPE_ftyp].pType, 4))) { bRet = TRUE; }
+    if ((8 <= nLen) && (!memcmp(&pData[4], "ftyp", 4))) { bRet = TRUE; }
 
     return bRet;
 }
@@ -549,7 +474,6 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
     PVIDEOCREATEPARAM pVideoCreateParam = ((LPCREATESTRUCT)lParam)->lpCreateParams;
     RECT rcClientSize;
     RECT rcBoxInfoSize;
-    HANSIZE nBoxCnt;
 
     HANINT nWinX;
     HANINT nWinY;
@@ -640,9 +564,8 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
     if (-1 != lWndProcRet)
     {
         mp4Info->paramVideo = *pVideoCreateParam;
-        nBoxCnt = MP4Process(mp4Info->paramVideo.pData, mp4Info->paramVideo.nLen, mp4Info);
-        mp4Info->box.map.nCnt = nBoxCnt;
-        if (0 == nBoxCnt) { lWndProcRet = -1; }
+        mp4Info->box.map.nCnt = 0;
+        if (FALSE == GetMP4InfoSize(mp4Info)) { lWndProcRet = -1; }
     }
     /* 重新分配 mp4Info 内存 */
     if (-1 != lWndProcRet)
@@ -661,9 +584,8 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
         BOOL bDecodeRet = TRUE;
 
         InitMP4BoxTreeWindow(mp4Info);
-        MP4Process(pVideoCreateParam->pData, mp4Info->paramVideo.nLen, mp4Info);
-        InitTrackIdListWindow(mp4Info);
-        bDecodeRet = DecodeMP4(mp4Info, 0);
+        if (FALSE == MP4Process(mp4Info)) { lWndProcRet = -1; }
+        else { bDecodeRet = DecodeMP4(mp4Info, 0); }
 
         (void)bDecodeRet;
     }
@@ -677,7 +599,7 @@ static void CommandCallback(PVIDEOMP4WNDEXTRA mp4Info, WPARAM wParam)
             if (CBN_SELCHANGE == HIWORD(wParam)) { ChooseBoxInfoTrackCallback(mp4Info); }
         } break;
         case WID_VIDEO_MP4_BOX_SAMPLE_ID_INPUT: {
-            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { UpdateBoxInfoWindow_mdat(NULL, mp4Info); }
+            if ((FALSE == mp4Info->box.sampleId.bLock) && (EN_CHANGE == HIWORD(wParam))) { UpdateBoxInfoWindow_mdat(NULL, mp4Info->box.hInfo, mp4Info); }
         } break;
 
         default: { } break;
@@ -708,11 +630,9 @@ static void InitMP4BoxInfo(PVIDEOMP4WNDEXTRA mp4Info)
     mp4Info->box.sampleId.bLock = FALSE;
     mp4Info->box.boxInfo.track.nCnt = 0;
     mp4Info->box.boxInfo.track.nTargetId = 0;
-    mp4Info->size.nSPSCnt = 0;
-    mp4Info->size.nPPSCnt = 0;
     mp4Info->size.nSampleCnt = 0;
-    mp4Info->size.nMacroBlockSize = 0;
-    mp4Info->size.nH264BufSize = 0;
+    mp4Info->decoder.table.nCnt = 0;
+    mp4Info->decoder.buf.nSize = 0;
     mp4Info->pBufPtr = NULL;
 }
 static void GetMP4BoxInfoWindowPos(PVIDEOMP4WNDEXTRA mp4Info, PRECT pPos, VIDEOMP4BOXTYPE boxType)
@@ -760,117 +680,11 @@ static void InitMP4BoxTreeWindow(PVIDEOMP4WNDEXTRA mp4Info)
     tviInsert.item.lParam = (LPARAM)NULL;
     mp4Info->box.hFileTree = TreeView_InsertItem(mp4Info->box.hTree, &tviInsert);
 }
-static HANSIZE MP4Process(const uint8_t* pData, HANSIZE nLen, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HANSIZE nBoxCnt = 0;
-    VIDEOMP4READBOXMACHINE readBox = {
-        .pData = pData,
-        .nLen = nLen,
-        .pBoxCnt = &nBoxCnt,
-        .pTree = NULL,
-    };
-
-    if (0 == ReadMP4Boxes(&readBox, mp4Info)) { nBoxCnt = 0; }
-
-    return nBoxCnt;
-}
-static HANSIZE ReadMP4Box(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HANSIZE nRet = 0;
-    const uint8_t* pData = pReadBox->pData;
-    VIDEOMP4READBOXMACHINE readSubBox = *pReadBox;
-    VIDEOMP4BOX mp4Box;
-    PVIDEOMP4BOXTREE pTree;
-    BOOL bOk = TRUE;
-    HANSIZE nDataOffset = 8;
-    ULARGE_INTEGER liSize;
-    HANSIZE nReadSubBoxOffset;
-
-    mp4Box.nSize = ReadMP4Data4ByteMSB(pData);
-    switch (mp4Box.nSize) {
-        case 0: { mp4Box.nSize = pReadBox->nLen; } break;
-        case 1: {
-            liSize.HighPart = ReadMP4Data4ByteMSB(&pData[8]);
-            liSize.LowPart = ReadMP4Data4ByteMSB(&pData[12]);
-            mp4Box.nSize = liSize.QuadPart;
-            nDataOffset = 16;
-        } break;
-        default: { } break;
-    }
-    if (pReadBox->nLen < mp4Box.nSize) { bOk = FALSE; }
-
-    if (TRUE == bOk) /* 先处理好当前节点，准备好给子 box 做递归 */
-    {
-        memcpy(mp4Box.pType, &pData[4], 4);
-        mp4Box.eType = GetMP4BoxType(mp4Box.pType);
-        mp4Box.nDataLen = mp4Box.nSize - nDataOffset;
-        mp4Box.pData = &pData[nDataOffset];
-
-        if (NULL != mp4Info->box.map.pBoxTree)
-        {
-            pTree = &(mp4Info->box.map.pBoxTree)[*(pReadBox->pBoxCnt)];
-            pTree->mp4Box = mp4Box;
-            pTree->pParent = pReadBox->pTree;
-
-            readSubBox.pTree = pTree;
-            UpdateBoxTreeMap(&readSubBox, mp4Info);
-        }
-        (*(pReadBox->pBoxCnt))++;
-        
-        if ((0 <= mp4Box.eType) && (mp4Box.eType < VIDEO_MP4_BOX_TYPE_CNT))
-        {
-            /* 尝试解析子 BOX，把数据段传下去 */
-            UpdateBoxInfoBeforeSubBoxes(&mp4Box, mp4Info);
-            nReadSubBoxOffset = sg_pMP4BoxType[mp4Box.eType].nReadSubBoxOffset;
-            if (HAN_VIDEO_MP4_INVALID_SIZE != nReadSubBoxOffset)
-            {
-                readSubBox.pData = &pData[8 + nReadSubBoxOffset];
-                readSubBox.nLen = mp4Box.nDataLen - nReadSubBoxOffset;
-                readSubBox.pBoxCnt = pReadBox->pBoxCnt;
-                ReadMP4Boxes(&readSubBox, mp4Info);
-            }
-            bOk = UpdateBoxInfoAfterSubBoxes(&mp4Box, mp4Info);
-        }
-    }
-
-    if (TRUE == bOk) { nRet = mp4Box.nSize; }
-
-    return nRet;
-}
-static HANSIZE ReadMP4Boxes(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HANSIZE nRet = 0;
-    const uint8_t* pData = pReadBox->pData;
-    HANSIZE nLen = pReadBox->nLen;
-    VIDEOMP4READBOXMACHINE readSubBox = *pReadBox;
-    HANSIZE nOffset;
-    HANSIZE nBoxLen;
-
-    nOffset = 0;
-    while (nOffset < nLen)
-    {
-        nBoxLen = ReadMP4Box(&readSubBox, mp4Info);
-        if (0 < nBoxLen)
-        {
-            nOffset += nBoxLen;
-            readSubBox.pData = &pData[nOffset];
-            readSubBox.nLen = nLen - nOffset;
-            nRet += nBoxLen;
-        }
-        else
-        {
-            nRet = 0;
-            break;
-        }
-    }
-
-    return nRet;
-}
-static void UpdateBoxTreeMap(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxTreeMap(PVIDEOMP4BOXPROCESS pProcess, PVIDEOMP4WNDEXTRA mp4Info)
 {
     HANCHAR pText[5];
-    PVIDEOMP4BOXTREE pTree = pReadBox->pTree;
-    PVIDEOMP4BOXTREE pParent = pReadBox->pTree->pParent;
+    PVIDEOMP4BOXTREE pTree = pProcess->pTree;
+    PVIDEOMP4BOXTREE pParent = pProcess->pTree->pParent;
     TVINSERTSTRUCT tviInsert;
 
     PrintMP4Text4Bytes(pText, pTree->mp4Box.pType);
@@ -882,26 +696,12 @@ static void UpdateBoxTreeMap(PVIDEOMP4READBOXMACHINE pReadBox, PVIDEOMP4WNDEXTRA
     tviInsert.item.pszText = pText;
     tviInsert.item.cchTextMax = ArrLen(pText);
     tviInsert.item.lParam = (LPARAM)pTree;
-    pReadBox->pTree->hItem = TreeView_InsertItem(mp4Info->box.hTree, &tviInsert);
+    pProcess->pTree->hItem = TreeView_InsertItem(mp4Info->box.hTree, &tviInsert);
 }
 static void PrintMP4Text4Bytes(HANCHAR pDest[5], const uint8_t pSrc[4])
 {
     CHAR pMultiBytes[5] = { pSrc[0], pSrc[1], pSrc[2], pSrc[3], '\0', };
     HAN_snprintf(pDest, 5, HANPSTR_PRINT_PCHAR_FORMAT, pMultiBytes);
-}
-static VIDEOMP4BOXTYPE GetMP4BoxType(const uint8_t* pType)
-{
-    VIDEOMP4BOXTYPE eRet = VIDEO_MP4_BOX_TYPE_CNT;
-
-    for (VIDEOMP4BOXTYPE eType = 0; eType < VIDEO_MP4_BOX_TYPE_CNT; eType++)
-    {
-        if (!memcmp(sg_pMP4BoxType[eType].pType, pType, 4))
-        {
-            eRet = eType;
-        }
-    }
-
-    return eRet;
 }
 static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
 {
@@ -911,29 +711,26 @@ static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
     SIZE_T nOffset;
     SIZE_T nBoxTreeSize;
     SIZE_T nTrackSize;
-    SIZE_T nSPSSize;
-    SIZE_T nPPSSize;
     SIZE_T nSampleSize;
-    SIZE_T nMacroBlockSize;
-    SIZE_T nH264BufSize;
+    SIZE_T nDecoderTypeSize;
+    SIZE_T nDecoderTableSize;
+    SIZE_T nDecoderBufSize;
 
     nBoxTreeSize = sizeof(VIDEOMP4BOXTREE) * nBoxCnt;
     nTrackSize = sizeof(VIDEOMP4TRACK) * pBoxInfo->track.nCnt;
-    nSPSSize = sizeof(VIDEOH264SPS) * mp4Info->size.nSPSCnt;
-    nPPSSize = sizeof(VIDEOH264PPS) * mp4Info->size.nPPSCnt;
     nSampleSize = sizeof(VIDEOMP4DECODEINFOSAMPLE) * mp4Info->size.nSampleCnt;
-    nMacroBlockSize = mp4Info->size.nMacroBlockSize;
-    nH264BufSize = mp4Info->size.nH264BufSize;
+    nDecoderTypeSize = sizeof(VIDEOMP4DECODERTYPE) * mp4Info->decoder.table.nCnt;
+    nDecoderTableSize = sizeof(*(mp4Info->decoder.table.pTable)) * mp4Info->decoder.table.nCnt;
+    nDecoderBufSize = mp4Info->decoder.buf.nSize;
     pRet = (PVIDEOMP4WNDEXTRA)HANWinHeapAlloc(
         mp4Info->hHeap, mp4Info,
         sizeof(VIDEOMP4WNDEXTRA)
          + nBoxTreeSize
          + nTrackSize
-         + nSPSSize
-         + nPPSSize
          + nSampleSize
-         + nMacroBlockSize
-         + nH264BufSize
+         + nDecoderTypeSize
+         + nDecoderTableSize
+         + nDecoderBufSize
     );
 
     if (NULL != pRet)
@@ -941,9 +738,9 @@ static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
         nOffset = 0;
         pRet->box.map.pBoxTree = (PVIDEOMP4BOXTREE)&(pRet->pBuf[nOffset]); nOffset += nBoxTreeSize;
         pRet->box.boxInfo.track.pList = (PVIDEOMP4TRACK)&(pRet->pBuf[nOffset]); nOffset += nTrackSize;
-
-        pRet->decoder.pMacroBlock = (PVIDEOH264MACROBLOCK)&(pRet->pBuf[nOffset]); nOffset += nMacroBlockSize;
-
+        pRet->decoder.table.pType = (PVIDEOMP4DECODERTYPE)&(pRet->pBuf[nOffset]); nOffset += nDecoderTypeSize;
+        pRet->decoder.table.pTable = (uint8_t**)&(pRet->pBuf[nOffset]); nOffset += nDecoderTableSize;
+        pRet->decoder.buf.pData = &(pRet->pBuf[nOffset]); nOffset += nDecoderBufSize;
         pRet->pBufPtr = &(pRet->pBuf[nOffset]);
     }
 
@@ -1005,83 +802,6 @@ static void UpdateBoxInfoPos(PVIDEOMP4WNDEXTRA mp4Info)
         ShowWindow(mp4Info->box.sampleId.hInput, SW_HIDE);
     }
 }
-static void UpdateBoxInfoBeforeSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    if (NULL != mp4Info->pBufPtr)
-    {
-        switch (pBox->eType) {
-            case VIDEO_MP4_BOX_TYPE_trak: { UpdateMP4InfoBeforeSubBoxes_trak(mp4Info); } break;
-            default: { } break;
-        }
-    }
-}
-static BOOL UpdateBoxInfoAfterSubBoxes(PCVIDEOMP4BOX pBox, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack;
-
-    if (NULL == mp4Info->pBufPtr) // Buf 还未重新分配内存，此时函数功能是统计需要分配的内存信息，如轨道数、样本数等
-    {
-        switch (pBox->eType) {
-            case VIDEO_MP4_BOX_TYPE_trak: { mp4Info->box.boxInfo.track.nCnt++; } break;
-            case VIDEO_MP4_BOX_TYPE_avcC: {
-                VIDEOMP4BOXINFO_avcC avcCInfo;
-                DecodeBoxData_avcC(pBox, &avcCInfo);
-                mp4Info->size.nSPSCnt += avcCInfo.sps.nNum;
-                mp4Info->size.nPPSCnt += avcCInfo.pps.nNum;
-                UpdateH264BufSize(&avcCInfo, mp4Info);
-            } break;
-            case VIDEO_MP4_BOX_TYPE_stsz: {
-                VIDEOMP4BOXINFO_stsz stszInfo;
-                DecodeBoxData_stsz(pBox, &stszInfo);
-                mp4Info->size.nSampleCnt += stszInfo.nSampleCnt;
-            } break;
-            default: { } break;
-        }
-    }
-    else // Buf 已重新分配，需要整理指针
-    {
-        pTrack = &(mp4Info->box.boxInfo.track.pList)[mp4Info->box.boxInfo.track.nTargetId];
-        switch (pBox->eType) {
-            case VIDEO_MP4_BOX_TYPE_trak: { bRet = UpdateMP4InfoAfterSubBoxes_trak(mp4Info); } break;
-            case VIDEO_MP4_BOX_TYPE_tkhd: { DecodeBoxData_tkhd(pBox, &(pTrack->tkhd)); } break;
-            case VIDEO_MP4_BOX_TYPE_hdlr: { DecodeBoxData_hdlr(pBox, &(pTrack->hdlr)); } break;
-            case VIDEO_MP4_BOX_TYPE_avc1: { DecodeBoxData_avc1(pBox, &(pTrack->avc1)); } break;
-            case VIDEO_MP4_BOX_TYPE_avcC: { DecodeBoxData_avcC(pBox, &(pTrack->avcC)); } break;
-            case VIDEO_MP4_BOX_TYPE_stts: { DecodeBoxData_stsdSubBoxDefault(pBox, &(pTrack->stts)); } break;
-            case VIDEO_MP4_BOX_TYPE_ctts: { DecodeBoxData_stsdSubBoxDefault(pBox, &(pTrack->ctts)); } break;
-            case VIDEO_MP4_BOX_TYPE_stss: { DecodeBoxData_stsdSubBoxDefault(pBox, &(pTrack->stss)); } break;
-            case VIDEO_MP4_BOX_TYPE_stsc: { DecodeBoxData_stsdSubBoxDefault(pBox, &(pTrack->stsc)); } break;
-            case VIDEO_MP4_BOX_TYPE_stsz: { DecodeBoxData_stsz(pBox, &(pTrack->stsz)); } break;
-            case VIDEO_MP4_BOX_TYPE_stco: { DecodeBoxData_stco(pBox, &(pTrack->stco64)); } break;
-            case VIDEO_MP4_BOX_TYPE_co64: { DecodeBoxData_co64(pBox, &(pTrack->stco64)); } break;
-            default: { } break;
-        }
-    }
-
-    return bRet;
-}
-static void UpdateH264BufSize(PVIDEOMP4BOXINFO_avcC pavcC, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    uint8_t nSPSCnt = pavcC->sps.nNum;
-    const uint8_t* pData;
-    uint16_t nLen;
-    VIDEOH264SPS sps;
-    HANSIZE nOffset;
-    HANSIZE nMacroBlockSize;
-
-    nOffset = 0;
-    pData = pavcC->sps.pList;
-    for (uint8_t iLoop = 0; iLoop < nSPSCnt; iLoop++)
-    {
-        nLen = ReadMP4Data2ByteMSB(&pData[nOffset]);
-        DecodeBoxData_avcC_SPS(&pData[nOffset + 2], nLen, &sps);
-        mp4Info->size.nH264BufSize += (HANSIZE)GetMbToSliceGroupMapSize(&sps) + (HANSIZE)GetmapUnitToSliceGroupMapSize(&sps);
-        nMacroBlockSize = sizeof(VIDEOH264MACROBLOCK) * sps.PicWidthInMbs * sps.FrameHeightInMbs;
-        if (mp4Info->size.nMacroBlockSize < nMacroBlockSize) { mp4Info->size.nMacroBlockSize = nMacroBlockSize; }
-        nOffset += nLen + 2;
-    }
-}
 static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem)
 {
     VIDEOMP4BOXTYPE eType = VIDEO_MP4_BOX_TYPE_CNT;
@@ -1090,15 +810,15 @@ static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem)
     if (((LPARAM)NULL) != pItem->lParam)
     {
         mp4Info->box.map.pChoosenBox = pBoxTree;
-        eType = GetMP4BoxType(pBoxTree->mp4Box.pType);
+        eType = pBoxTree->mp4Box.eType;
 
         SendMessage(mp4Info->box.hInfo, WM_SETREDRAW, FALSE, 0);
 
         ListView_DeleteAllItems(mp4Info->box.hInfo);
         if (eType < VIDEO_MP4_BOX_TYPE_CNT)
         {
-            UpdateBoxInfoWindow_SetTitle(eType, mp4Info->box.hInfo);
-            if (NULL != sg_pMP4BoxType[(HANSIZE)eType].UpdateBoxInfoWindow) { sg_pMP4BoxType[(HANSIZE)eType].UpdateBoxInfoWindow(pBoxTree, mp4Info); }
+            UpdateBoxInfoWindow_SetTitle(pBoxTree, mp4Info->box.hInfo);
+            if (NULL != pBoxTree->UpdateBoxInfoWindow) { pBoxTree->UpdateBoxInfoWindow(pBoxTree, mp4Info->box.hInfo, mp4Info); }
             else { (void)UpdateBoxInfoWindow_BlankBox(pBoxTree->mp4Box.pData, pBoxTree->mp4Box.nDataLen, 0, mp4Info->box.hInfo); }
         }
         else { UpdateBoxInfoWindow_Default(pBoxTree, mp4Info->box.hInfo); }
@@ -1141,8 +861,253 @@ static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info)
         {
             nSampleCnt = pTrack[nTrackId].nSampleCnt;
             SendMessage(mp4Info->box.sampleId.hUpDown, UDM_SETRANGE32, (WPARAM)0, (LPARAM)(nSampleCnt - 1));
-            UpdateBoxInfoWindow_mdat(NULL, mp4Info);
+            UpdateBoxInfoWindow_mdat(NULL, mp4Info->box.hInfo, mp4Info);
         }
+    }
+}
+
+static BOOL GetMP4InfoSize(PVIDEOMP4WNDEXTRA mp4Info)
+{
+    BOOL bRet;
+    VIDEOMP4BOXGETSIZE boxGetSize;
+    HANSIZE nBoxCnt = 0;
+    HANSIZE nDecoderCnt = 0;
+    HANSIZE nDecoderSize = 0;
+
+    boxGetSize.mp4Info = mp4Info;
+    boxGetSize.pBoxCnt = &nBoxCnt;
+    boxGetSize.pDecoderCnt = &nDecoderCnt;
+    boxGetSize.pDecoderSize = &nDecoderSize;
+
+    if (0 != ReadMP4Boxes(mp4Info->paramVideo.pData, mp4Info->paramVideo.nLen, ReadMP4BoxCallback_GetSize, &boxGetSize))
+    {
+        mp4Info->box.map.nCnt = nBoxCnt;
+        mp4Info->decoder.table.nCnt = nDecoderCnt;
+        mp4Info->decoder.buf.nSize = nDecoderSize;
+        bRet = TRUE;
+    }
+    else { bRet = FALSE; }
+
+    return bRet;
+}
+static BOOL MP4Process(PVIDEOMP4WNDEXTRA mp4Info)
+{
+    BOOL bRet;
+    VIDEOMP4BOXPROCESS boxProcess;
+    HANSIZE nBoxCnt = 0;
+    HANSIZE nDecoderCnt = 0;
+    HANSIZE nDecoderBufOffset = 0;
+
+    mp4Info->box.boxInfo.track.nTargetId = 0;
+    boxProcess.mp4Info = mp4Info;
+    boxProcess.pTree = NULL;
+    boxProcess.pBoxCnt = &nBoxCnt;
+    boxProcess.pDecoderCnt = &nDecoderCnt;
+    boxProcess.pDecoderBufOffset = &nDecoderBufOffset;
+
+    if (0 != ReadMP4Boxes(mp4Info->paramVideo.pData, mp4Info->paramVideo.nLen, ReadMP4BoxCallback_Process, &boxProcess))
+    {
+        InitTrackIdListWindow(mp4Info);
+        bRet = TRUE;
+    }
+    else { bRet = FALSE; }
+
+    return bRet;
+}
+static void ReadMP4BoxCallback_GetSize(PCVIDEOMP4BOX pBox, void* pParam)
+{
+    PVIDEOMP4BOXGETSIZE pGetSize = (PVIDEOMP4BOXGETSIZE)pParam;
+    PVIDEOMP4WNDEXTRA mp4Info = pGetSize->mp4Info;
+    VIDEOMP4BOXTYPE boxType = pBox->eType;
+    HANSIZE nReadSubBoxOffset;
+    VIDEOMP4BOXINFO_tkhd tkhdInfo;
+    VIDEOMP4BOXINFO_stsz stszInfo;
+
+    /* 先累加数量 */
+    (*(pGetSize->pBoxCnt))++;
+    /* 处理子 BOX 前的预处理 */
+    switch (boxType) {
+        case VIDEO_MP4_BOX_TYPE_trak: { // 统计轨道数
+            mp4Info->box.boxInfo.track.nCnt++;
+        } break;
+        case VIDEO_MP4_BOX_TYPE_tkhd: { // 获取分辨率
+            if (TRUE == DecodeBoxData_tkhd(pBox, &tkhdInfo))
+            {
+                mp4Info->decoder.mediaInfo.pxResolution.pxWidth = tkhdInfo.nWidth.u32 / (uint32_t)0x10000;
+                mp4Info->decoder.mediaInfo.pxResolution.pxHeight = tkhdInfo.nHeight.u32 / (uint32_t)0x10000;
+            }
+        } break;
+        case VIDEO_MP4_BOX_TYPE_stsz: { // 统计样本数
+            DecodeBoxData_stsz(pBox, &stszInfo);
+            mp4Info->size.nSampleCnt += stszInfo.nSampleCnt;
+        } break;
+        default: { } break;
+    }
+    /* 读取子 BOX */
+    if ((0 <= boxType) && (boxType < VIDEO_MP4_BOX_TYPE_CNT))
+    {
+        /* 尝试解析子 BOX，把数据段传下去 */
+        nReadSubBoxOffset = sg_pMP4BoxTypeInfo[boxType].nReadSubBoxOffset;
+        if (HAN_VIDEO_MP4_INVALID_SIZE != nReadSubBoxOffset)
+        {
+            switch (boxType) {
+                case VIDEO_MP4_BOX_TYPE_stsd: { // stsd 要处理解码器，走单独的逻辑
+                    ReadMP4BoxCallback_GetSize_stsd(pBox, pGetSize);
+                } break;
+                default: {
+                    ReadMP4Boxes(&pBox->pData[nReadSubBoxOffset], pBox->nDataLen - nReadSubBoxOffset, ReadMP4BoxCallback_GetSize, pGetSize);
+                } break;
+            }
+        }
+    }
+}
+static void ReadMP4BoxCallback_GetSize_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXGETSIZE pGetSize)
+{
+    PVIDEOMP4WNDEXTRA mp4Info = pGetSize->mp4Info;
+    const uint8_t* pData = pBox->pData;
+    HANSIZE nOffset = sg_pMP4BoxTypeInfo[VIDEO_MP4_BOX_TYPE_stsd].nReadSubBoxOffset;
+    HANPSIZE pDecoderCnt = pGetSize->pDecoderCnt;
+    HANPSIZE pDecoderSize = pGetSize->pDecoderSize;
+    VIDEOMP4BOXINFO_stsd stsdInfo;
+    HANSIZE nSubBoxSize;
+
+    DecodeBoxData_stsd(pBox, &stsdInfo);
+    for (uint32_t iLoop = 0; iLoop < stsdInfo.nDecoderCnt; iLoop++)
+    {
+        nSubBoxSize = ReadMP4Data4ByteMSB(&pData[nOffset]);
+        pGetSize->decoderType = GetVideoDecoderType(&pData[nOffset], nSubBoxSize);
+        (*pDecoderSize) += GetVideoDecoderSize(&pBox->pData[nOffset], pBox->nDataLen - nOffset, pGetSize->decoderType, &(mp4Info->decoder.mediaInfo));
+        ReadMP4Boxes(&pBox->pData[nOffset], pBox->nDataLen - nOffset, ReadMP4BoxCallback_GetSize_DecoderBox, pGetSize);
+        nOffset += nSubBoxSize;
+        (*pDecoderCnt)++;
+    }
+}
+static void ReadMP4BoxCallback_GetSize_DecoderBox(PCVIDEOMP4BOX pBox, void* pParam)
+{
+    PVIDEOMP4BOXGETSIZE pGetSize = (PVIDEOMP4BOXGETSIZE)pParam;
+    HANSIZE nReadSubBoxOffset = GetSubBoxOffset(pGetSize->decoderType, pBox->eType);
+
+    (*(pGetSize->pBoxCnt))++;
+    if (HAN_VIDEO_MP4_INVALID_SIZE != nReadSubBoxOffset)
+    {
+        ReadMP4Boxes(&pBox->pData[nReadSubBoxOffset], pBox->nDataLen - nReadSubBoxOffset, ReadMP4BoxCallback_GetSize_DecoderBox, pGetSize);
+    }
+}
+static void ReadMP4BoxCallback_Process(PCVIDEOMP4BOX pBox, void* pParam)
+{
+    PVIDEOMP4BOXPROCESS pProcess = (PVIDEOMP4BOXPROCESS)pParam;
+    VIDEOMP4BOXPROCESS boxProcess = *pProcess;
+    PVIDEOMP4WNDEXTRA mp4Info = pProcess->mp4Info;
+    VIDEOMP4BOXTYPE boxType = pBox->eType;
+    HANSIZE nReadSubBoxOffset = sg_pMP4BoxTypeInfo[boxType].nReadSubBoxOffset;
+    HANPSIZE pBoxCnt = pProcess->pBoxCnt;
+    PVIDEOMP4BOXTREE pTree;
+    PVIDEOMP4TRACK pTrack;
+    
+    /* 处理子 BOX 前的预处理（初始化） */
+    switch (boxType) {
+        case VIDEO_MP4_BOX_TYPE_trak: { ReadMP4BoxCallback_ProcessInittrak(mp4Info, &boxProcess); } break;
+        default: { } break;
+    }
+    /* 先做好树 */
+    pTree = &(mp4Info->box.map.pBoxTree)[*pBoxCnt];
+    pTree->mp4Box = *pBox;
+    pTree->pBoxName = sg_pMP4BoxTypeInfo[boxType].pName;
+    if ((0 <= boxType) && (boxType < VIDEO_MP4_BOX_TYPE_CNT))
+    {
+        pTree->UpdateBoxInfoWindow = sg_pMP4BoxTypeInfo[boxType].UpdateBoxInfoWindow;
+        pTree->pWinParam = mp4Info;
+    }
+    else { pTree->UpdateBoxInfoWindow = NULL; }
+    pTree->pParent = pProcess->pTree;
+    boxProcess.pTree = pTree;
+    UpdateBoxTreeMap(&boxProcess, mp4Info);
+    /* 指向下一个 BOX */
+    (*pBoxCnt)++;
+    /* 读取子 BOX */
+    if ((0 <= boxType) && (boxType < VIDEO_MP4_BOX_TYPE_CNT))
+    {
+        /* 尝试解析子 BOX，把数据段传下去 */
+        if (HAN_VIDEO_MP4_INVALID_SIZE != nReadSubBoxOffset)
+        {
+            switch (boxType) {
+                case VIDEO_MP4_BOX_TYPE_stsd: { // stsd 要处理解码器，走单独的逻辑
+                    ReadMP4BoxCallback_Process_stsd(pBox, &boxProcess);
+                } break;
+                default: {
+                    ReadMP4Boxes(&pBox->pData[nReadSubBoxOffset], pBox->nDataLen - nReadSubBoxOffset, ReadMP4BoxCallback_Process, &boxProcess);
+                } break;
+            }
+        }
+    }
+    /* 读完子 BOX 后的处理 */
+    pTrack = &(mp4Info->box.boxInfo.track.pList)[mp4Info->box.boxInfo.track.nTargetId];
+    switch (boxType) {
+        case VIDEO_MP4_BOX_TYPE_trak: { (void)UpdateMP4Info_trakProcess(mp4Info); } break;
+        case VIDEO_MP4_BOX_TYPE_tkhd: { (void)DecodeBoxData_tkhd(pBox, &(pTrack->tkhd)); } break;
+        case VIDEO_MP4_BOX_TYPE_hdlr: { DecodeBoxData_hdlr(pBox, &(pTrack->hdlr)); } break;
+        case VIDEO_MP4_BOX_TYPE_stts: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->stts)); } break;
+        case VIDEO_MP4_BOX_TYPE_ctts: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->ctts)); } break;
+        case VIDEO_MP4_BOX_TYPE_stss: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->stss)); } break;
+        case VIDEO_MP4_BOX_TYPE_stsc: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->stsc)); } break;
+        case VIDEO_MP4_BOX_TYPE_stsz: { DecodeBoxData_stsz(pBox, &(pTrack->stsz)); } break;
+        case VIDEO_MP4_BOX_TYPE_stco: { DecodeBoxData_stco(pBox, &(pTrack->stco64)); } break;
+        case VIDEO_MP4_BOX_TYPE_co64: { DecodeBoxData_co64(pBox, &(pTrack->stco64)); } break;
+        default: { } break;
+    }
+}
+static void ReadMP4BoxCallback_Process_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXPROCESS pProcess)
+{
+    PVIDEOMP4WNDEXTRA mp4Info = pProcess->mp4Info;
+    const uint8_t* pData = pBox->pData;
+    HANSIZE nOffset = sg_pMP4BoxTypeInfo[VIDEO_MP4_BOX_TYPE_stsd].nReadSubBoxOffset;
+    HANSIZE nDecoderBufSize = mp4Info->decoder.buf.nSize;
+    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList)[mp4Info->box.boxInfo.track.nTargetId];
+    HANPSIZE pDecoderCnt = pProcess->pDecoderCnt;
+    HANPSIZE pDecoderBufOffset = pProcess->pDecoderBufOffset;
+    uint8_t** pDecoderTable = pTrack->decoder.table.pTable;
+    VIDEOMP4BOXINFO_stsd stsdInfo;
+    HANSIZE nSubBoxSize;
+    HANSIZE nDecoderBufOffset;
+
+    DecodeBoxData_stsd(pBox, &stsdInfo);
+    for (uint32_t iLoop = 0; iLoop < stsdInfo.nDecoderCnt; iLoop++)
+    {
+        nSubBoxSize = ReadMP4Data4ByteMSB(&pData[nOffset]);
+        pProcess->decoderType = GetVideoDecoderType(&pData[nOffset], nSubBoxSize);
+        nDecoderBufOffset = *pDecoderBufOffset;
+        pDecoderTable[iLoop] = &(mp4Info->decoder.buf.pData[nDecoderBufOffset]);
+        (*pDecoderBufOffset) = InitVideoDecoder(&pBox->pData[nOffset], pBox->nDataLen - nOffset, pProcess->decoderType, pDecoderTable[iLoop], nDecoderBufSize - nDecoderBufOffset);
+        pTrack->decoder.table.pType[iLoop] = pProcess->decoderType;
+        pTrack->decoder.table.nCnt++;
+        pProcess->pDecoder = pDecoderTable[iLoop];
+        ReadMP4Boxes(&pBox->pData[nOffset], pBox->nDataLen - nOffset, ReadMP4BoxCallback_Process_DecoderBox, pProcess);
+        nOffset += nSubBoxSize;
+        (*pDecoderCnt)++;
+    }
+}
+static void ReadMP4BoxCallback_Process_DecoderBox(PCVIDEOMP4BOX pBox, void* pParam)
+{
+    PVIDEOMP4BOXPROCESS pProcess = (PVIDEOMP4BOXPROCESS)pParam;
+    VIDEOMP4BOXPROCESS boxProcess = *pProcess;
+    PVIDEOMP4WNDEXTRA mp4Info = pProcess->mp4Info;
+    HANSIZE nReadSubBoxOffset = GetSubBoxOffset(pProcess->decoderType, pBox->eType);
+    HANPSIZE pBoxCnt = pProcess->pBoxCnt;
+    PVIDEOMP4BOXTREE pTree;
+
+    pTree = &(mp4Info->box.map.pBoxTree)[*pBoxCnt];
+    pTree->mp4Box = *pBox;
+    pTree->pBoxName = GetDecoderBoxName(pProcess->decoderType, pBox->eType);
+    pTree->UpdateBoxInfoWindow = GetUpdateBoxInfoWindowCallback(pProcess->decoderType, pBox->eType);
+    pTree->pWinParam = pProcess->pDecoder;
+    pTree->pParent = pProcess->pTree;
+    boxProcess.pTree = pTree;
+    UpdateBoxTreeMap(&boxProcess, mp4Info);
+    (*pBoxCnt)++;
+
+    if (HAN_VIDEO_MP4_INVALID_SIZE != nReadSubBoxOffset)
+    {
+        ReadMP4Boxes(&pBox->pData[nReadSubBoxOffset], pBox->nDataLen - nReadSubBoxOffset, ReadMP4BoxCallback_Process_DecoderBox, &boxProcess);
     }
 }
 
@@ -1168,36 +1133,35 @@ static inline uint32_t ReadMP4Data4ByteMSB(const uint8_t pData[4])
     return (((uint32_t)pData[0] << 24) + ((uint32_t)pData[1] << 16) + ((uint32_t)pData[2] << 8) + (uint32_t)pData[3]);
 }
 
-static void UpdateMP4InfoBeforeSubBoxes_trak(PVIDEOMP4WNDEXTRA mp4Info)
+static void ReadMP4BoxCallback_ProcessInittrak(PVIDEOMP4WNDEXTRA mp4Info, PVIDEOMP4BOXPROCESS pProcess)
 {
-    PVIDEOMP4TRACK pTrack;
+    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
     
-    pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
     pTrack->stts.pRawData = NULL;
     pTrack->ctts.pRawData = NULL;
     pTrack->stss.pRawData = NULL;
     pTrack->stsc.pRawData = NULL;
     pTrack->stsz.pRawData = NULL;
     pTrack->stco64.pRawData = NULL;
+    pTrack->decoder.table.pTable = &(mp4Info->decoder.table.pTable)[*(pProcess->pDecoderCnt)];
+    pTrack->decoder.table.pType = &(mp4Info->decoder.table.pType)[*(pProcess->pDecoderCnt)];
 }
 
-static BOOL UpdateMP4InfoAfterSubBoxes_trak(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_trakProcess(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
 
-    /* 解码 SPS 和 PPS */
-    UpdateMP4InfoAfterSubBoxes_avcC(mp4Info);
     /* 解码样本信息 */
     pTrack->pSample = (PVIDEOMP4DECODEINFOSAMPLE)(mp4Info->pBufPtr);
     pTrack->nSampleCnt = pTrack->stsz.nSampleCnt;
 
-    if ((FALSE == UpdateMP4InfoAfterSubBoxes_stts(mp4Info)) ||
-        (FALSE == UpdateMP4InfoAfterSubBoxes_ctts(mp4Info)) ||
-        (FALSE == UpdateMP4InfoAfterSubBoxes_stss(mp4Info)) ||
-        (FALSE == UpdateMP4InfoAfterSubBoxes_stsc(mp4Info)) ||
-        (FALSE == UpdateMP4InfoAfterSubBoxes_stsz(mp4Info)) ||
-        (FALSE == UpdateMP4InfoAfterSubBoxes_stco64(mp4Info)))
+    if ((FALSE == UpdateMP4Info_stts(mp4Info)) ||
+        (FALSE == UpdateMP4Info_ctts(mp4Info)) ||
+        (FALSE == UpdateMP4Info_stss(mp4Info)) ||
+        (FALSE == UpdateMP4Info_stsc(mp4Info)) ||
+        (FALSE == UpdateMP4Info_stsz(mp4Info)) ||
+        (FALSE == UpdateMP4Info_stco64(mp4Info)))
     {
         bRet = FALSE;
     }
@@ -1207,51 +1171,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_trak(PVIDEOMP4WNDEXTRA mp4Info)
 
     return bRet;
 }
-static void UpdateMP4InfoAfterSubBoxes_avcC(PVIDEOMP4WNDEXTRA mp4Info)
-{
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
-    uint8_t nSPSCnt = pTrack->avcC.sps.nNum;
-    uint8_t nPPSCnt = pTrack->avcC.pps.nNum;
-    const uint8_t* pData;
-    PVIDEOH264SPS pSPS;
-    PVIDEOH264PPS pPPS;
-    HANSIZE nLen;
-    HANSIZE nOffset;
-
-    nOffset = 0;
-    pSPS = (PVIDEOH264SPS)(mp4Info->pBufPtr);
-    pData = pTrack->avcC.sps.pList;
-    for (uint8_t iLoop = 0; iLoop < nSPSCnt; iLoop++)
-    {
-        nLen = ReadMP4Data2ByteMSB(&pData[nOffset]);
-        DecodeBoxData_avcC_SPS(&pData[nOffset + 2], nLen, &(pSPS[iLoop]));
-        nOffset += nLen + 2;
-    }
-    pTrack->avcC.sps.pSPS = pSPS;
-    mp4Info->pBufPtr = (uint8_t*)(&pSPS[nSPSCnt]);
-    for (uint8_t iLoop = 0; iLoop < nSPSCnt; iLoop++)
-    {
-        nLen = GetmapUnitToSliceGroupMapSize(&pSPS[iLoop]);
-        pSPS[iLoop].mapUnitToSliceGroupMap = (PVIDEOH264SLICEGROUPMAP)(mp4Info->pBufPtr);
-        mp4Info->pBufPtr = &(mp4Info->pBufPtr)[nLen];
-        nLen = GetMbToSliceGroupMapSize(&pSPS[iLoop]);
-        pSPS[iLoop].MbToSliceGroupMap = (PVIDEOH264SLICEGROUPMAP)(mp4Info->pBufPtr);
-        mp4Info->pBufPtr = &(mp4Info->pBufPtr)[nLen];
-    }
-
-    nOffset = 0;
-    pPPS = (PVIDEOH264PPS)(mp4Info->pBufPtr);
-    pData = pTrack->avcC.pps.pList;
-    for (uint8_t iLoop = 0; iLoop < nPPSCnt; iLoop++)
-    {
-        nLen = ReadMP4Data2ByteMSB(&pData[nOffset]);
-        DecodeBoxData_avcC_PPS(&pData[nOffset + 2], nLen, &(pPPS[iLoop]));
-        nOffset += nLen + 2;
-    }
-    pTrack->avcC.pps.pPPS = pPPS;
-    mp4Info->pBufPtr = (uint8_t*)(&pPPS[nPPSCnt]);
-}
-static BOOL UpdateMP4InfoAfterSubBoxes_stts(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_stts(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1295,7 +1215,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stts(PVIDEOMP4WNDEXTRA mp4Info)
     
     return bRet;
 }
-static BOOL UpdateMP4InfoAfterSubBoxes_ctts(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_ctts(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1349,7 +1269,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_ctts(PVIDEOMP4WNDEXTRA mp4Info)
 
     return bRet;
 }
-static BOOL UpdateMP4InfoAfterSubBoxes_stss(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_stss(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1433,7 +1353,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stss(PVIDEOMP4WNDEXTRA mp4Info)
 
     return bRet;
 }
-static BOOL UpdateMP4InfoAfterSubBoxes_stsc(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_stsc(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1524,7 +1444,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stsc(PVIDEOMP4WNDEXTRA mp4Info)
 
     return bRet;
 }
-static BOOL UpdateMP4InfoAfterSubBoxes_stsz(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_stsz(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1557,7 +1477,7 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stsz(PVIDEOMP4WNDEXTRA mp4Info)
 
     return bRet;
 }
-static BOOL UpdateMP4InfoAfterSubBoxes_stco64(PVIDEOMP4WNDEXTRA mp4Info)
+static BOOL UpdateMP4Info_stco64(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
     PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
@@ -1602,24 +1522,6 @@ static BOOL UpdateMP4InfoAfterSubBoxes_stco64(PVIDEOMP4WNDEXTRA mp4Info)
     return bRet;
 }
 
-static HANINT UpdateBoxInfoWindow_InsertLine(HANPSTR pField, HANPSTR pValue, HANINT nId, HWND hListView)
-{
-    HANINT nRet;
-    LVITEM lvItem = { .mask = LVIF_TEXT ,};
-    
-    lvItem.iItem = nId;
-    lvItem.iSubItem = VIDEO_MP4_BOX_INFO_HEADER_FIELD;
-    lvItem.pszText = pField;
-    nRet = ListView_InsertItem(hListView, &lvItem);
-    if (-1 != nRet) { nRet = nId + 1; }
-    else { nRet = nId; }
-
-    lvItem.iSubItem = VIDEO_MP4_BOX_INFO_HEADER_VALUE;
-    lvItem.pszText = pValue;
-    ListView_SetItem(hListView, &lvItem);
-
-    return nRet;
-}
 static HANINT UpdateBoxInfoWindow_FullBoxVersionFlags(HANINT nId, HWND hListView, PVIDEOMP4BOXINFOFULLBOXVERFLAGS pFB)
 {
     HANINT nRet = nId;
@@ -1654,15 +1556,15 @@ static void UpdateBoxInfoWindow_PrintTimeDuration(HANPSTR pText, HANSIZE nLen, P
 
     HAN_snprintf(pText, nLen, TEXT("%u:%u:%u"), nHour, nMinute, nSecond);
 }
-static void UpdateBoxInfoWindow_SetTitle(VIDEOMP4BOXTYPE eType, HWND hListView)
+static void UpdateBoxInfoWindow_SetTitle(PVIDEOMP4BOXTREE pBoxTree, HWND hListView)
 {
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     LVCOLUMN lvTitle = { .mask = LVCF_TEXT, };
 
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, HANPSTR_PRINT_PCHAR_FORMAT, sg_pMP4BoxType[eType].pType);
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, HANPSTR_PRINT_PCHAR_FORMAT, pBoxTree->mp4Box.pType);
     lvTitle.pszText = pText;
     ListView_SetColumn(hListView, VIDEO_MP4_BOX_INFO_HEADER_FIELD, &lvTitle);
-    lvTitle.pszText = sg_pMP4BoxType[eType].GetBoxName();
+    lvTitle.pszText = pBoxTree->pBoxName;
     ListView_SetColumn(hListView, VIDEO_MP4_BOX_INFO_HEADER_VALUE, &lvTitle);
 }
 static void UpdateBoxInfoWindow_Default(PVIDEOMP4BOXTREE pBoxTree, HWND hListView)
@@ -1678,10 +1580,10 @@ static void UpdateBoxInfoWindow_Default(PVIDEOMP4BOXTREE pBoxTree, HWND hListVie
 
     (void)UpdateBoxInfoWindow_BlankBox(pBoxTree->mp4Box.pData, pBoxTree->mp4Box.nDataLen, 0, hListView);
 }
-static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANPSTR pCompatibleBrandsName;
@@ -1707,11 +1609,11 @@ static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nNameId++;
     }
 }
-static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
     HANSIZE nLen = pBoxTree->mp4Box.nDataLen;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     CHAR pBuf[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     HANINT nId = 0;
@@ -1729,9 +1631,11 @@ static void UpdateBoxInfoWindow_free(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, HANPSTR_PRINT_PCHAR_FORMAT, pBuf);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_free_FieldName(VIDEO_MP4_free_BOX_FIELD_TEXT), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
     (void)pBoxTree;
+    (void)hListView;
+    PVIDEOMP4WNDEXTRA mp4Info = (PVIDEOMP4WNDEXTRA)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     HANINT nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
     PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
@@ -1766,9 +1670,9 @@ static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFO_mvhd mvhdInfo;
@@ -1803,10 +1707,10 @@ static void UpdateBoxInfoWindow_mvhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mvhd_FieldName(VIDEO_MP4_mvhd_BOX_FIELD_NEXT_TRACK_ID), pText, nId, hListView);
     }
 }
-static void UpdateBoxInfoWindow_iods(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_iods(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
@@ -1817,9 +1721,9 @@ static void UpdateBoxInfoWindow_iods(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     VideoMP4PrintHexData(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, &pData[4], pBoxTree->mp4Box.nDataLen - 4);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_iods_FieldName(VIDEO_MP4_iods_BOX_FIELD_DATA), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_tkhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_tkhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pFlagsName[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
@@ -1867,10 +1771,10 @@ static void UpdateBoxInfoWindow_tkhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nId = UpdateBoxInfoWindow_InsertLine(GetMP4_tkhd_FieldName(VIDEO_MP4_tkhd_BOX_FIELD_RESOLUTION), pText, nId, hListView);
     }
 }
-static void UpdateBoxInfoWindow_elst(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_elst(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
@@ -1903,9 +1807,9 @@ static void UpdateBoxInfoWindow_elst(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nId = UpdateBoxInfoWindow_InsertLine(TEXT("播放速率"), pText, nId, hListView);
     }
 }
-static void UpdateBoxInfoWindow_mdhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_mdhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     CHAR pLanguage[3];
     HANINT nId = 0;
@@ -1935,9 +1839,9 @@ static void UpdateBoxInfoWindow_mdhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdhd_FieldName(VIDEO_MP4_mdhd_BOX_FIELD_LANGUAGE), pText, nId, hListView);
     }
 }
-static void UpdateBoxInfoWindow_hdlr(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_hdlr(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFO_hdlr hdlrInfo;
@@ -1953,9 +1857,9 @@ static void UpdateBoxInfoWindow_hdlr(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, HANPSTR_PRINT_PCHAR_FORMAT, hdlrInfo.pName);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_hdlr_FieldName(VIDEO_MP4_hdlr_BOX_FIELD_NAME), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_vmhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_vmhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFO_vmhd vmhdInfo;
@@ -1969,10 +1873,10 @@ static void UpdateBoxInfoWindow_vmhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("（%u, %u, %u）"), vmhdInfo.pOpColor[0], vmhdInfo.pOpColor[1], vmhdInfo.pOpColor[2]);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_vmhd_FieldName(VIDEO_MP4_vmhd_BOX_FIELD_OP_COLOR), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_dref(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_dref(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
@@ -1986,9 +1890,9 @@ static void UpdateBoxInfoWindow_dref(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), nListCnt);
     nId = UpdateBoxInfoWindow_InsertLine(TEXT("条目数"), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_url_(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_url_(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFO_url_ urlInfo;
@@ -2007,177 +1911,31 @@ static void UpdateBoxInfoWindow_url_(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         nId = UpdateBoxInfoWindow_InsertLine(GetMP4_url__FieldName(VIDEO_MP4_url__BOX_FIELD_LOCATION), pText, nId, hListView);
     }
 }
-static void UpdateBoxInfoWindow_stsd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stsd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
-    VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
-    uint32_t nListCnt;
-    HANSIZE nOffset = 0;
+    VIDEOMP4BOXINFO_stsd stsdInfo;
     
-    DecodeBoxData_FullBoxVersionFlags(pData, &fbVF);
-    nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &fbVF);
-    /* 条目数 */
-    nListCnt = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), nListCnt);
-    nId = UpdateBoxInfoWindow_InsertLine(TEXT("条目数"), pText, nId, hListView);
+    DecodeBoxData_stsd(&(pBoxTree->mp4Box), &stsdInfo);
+    nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &(stsdInfo.fbVF));
+    /* 解码器数量 */
+    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), stsdInfo.nDecoderCnt);
+    nId = UpdateBoxInfoWindow_InsertLine(TEXT("解码器数量"), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_avc1(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stts(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
-    VIDEOMP4BOXINFO_avc1 avc1Info;
-
-    DecodeBoxData_avc1(&(pBoxTree->mp4Box), &avc1Info);
-    /* 数据引用索引 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nDataRefIndex);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_DATA_REF_INDEX), pText, nId, hListView);
-    /* 版本 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nVersion);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_VERSION), pText, nId, hListView);
-    /* 修订 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nRevision);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_REVISION), pText, nId, hListView);
-    /* 修订 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.cVendor);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_VENDOR), pText, nId, hListView);
-    /* 时间质量 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nTemporalQuality);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_TEMPORAL_QUALITY), pText, nId, hListView);
-    /* 空间质量 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nSpatialQuality);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_SPATIAL_QUALITY), pText, nId, hListView);
-    /* 宽度（像素） */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nWidth);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_WIDTH), pText, nId, hListView);
-    /* 高度（像素） */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nHeight);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_HEIGHT), pText, nId, hListView);
-    /* 水平分辨率 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%g"), avc1Info.nHorizResolution.nPhy);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_HORIZ_RESOLUTION), pText, nId, hListView);
-    /* 垂直分辨率 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%g"), avc1Info.nVertResolution.nPhy);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_VERT_RESOLUTION), pText, nId, hListView);
-    /* 数据大小 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nDataSize);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_DATA_SIZE), pText, nId, hListView);
-    /* 每样本帧数 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nFrameCount);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_FRAME_COUNT), pText, nId, hListView);
-    /* 压缩器名称 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, HANPSTR_PRINT_PCHAR_FORMAT, avc1Info.pCompressorName);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_COMPRESSOR_NAME), pText, nId, hListView);
-    /* 颜色深度 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nDepth);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_DEPTH), pText, nId, hListView);
-    /* 颜色表ID */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avc1Info.nColorTable);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avc1_FieldName(VIDEO_MP4_avc1_BOX_FIELD_COLOR_TABLE), pText, nId, hListView);
-}
-static void UpdateBoxInfoWindow_avcC(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HWND hListView = mp4Info->box.hInfo;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
-    VIDEOMP4BOXINFO_avcC avcCInfo;
-    VIDEOH264SPS sps;
-    VIDEOH264PPS pps;
-    uint32_t nLen;
-    uint32_t nOffset;
-
-    DecodeBoxData_avcC(&(pBoxTree->mp4Box), &avcCInfo);
-    /* 配置版本 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avcCInfo.nConfigurationVersion);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_CONFIGURATION_VERSION), pText, nId, hListView);
-    /* 配置文件标识 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u（%s）"), avcCInfo.nAvcProfileIndication, GetMP4_avcC_ProfileIndicationName(avcCInfo.nAvcProfileIndication));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_AVC_PROFILE_INDICATION), pText, nId, hListView);
-    /* 配置文件兼容性 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avcCInfo.nProfileCompatibility);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_PROFILE_COMPATIBILITY), pText, nId, hListView);
-    /* 级别标识 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), avcCInfo.nAvcLevelIndication);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_AVC_LEVEL_INDICATION), pText, nId, hListView);
-    /* NALU长度大小 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u字节"), avcCInfo.nNALULengthSize);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_AVC_NALU_LENGTH_SIZE), pText, nId, hListView);
-    /* SPS 条目 */
-    nId = UpdateBoxInfoWindow_InsertLine(TEXT(""), TEXT(""), nId, hListView);
-    nOffset = 0;
-    for (uint8_t iLoop = 0; iLoop < avcCInfo.sps.nNum; iLoop++)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%s%u"), GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_AVC_SPS), iLoop + 1);
-        nId = UpdateBoxInfoWindow_InsertLine(pText, TEXT(""), nId, hListView);
-        nLen = ReadMP4Data2ByteMSB(&avcCInfo.sps.pList[nOffset]);
-        if ((nLen + 2) <= avcCInfo.sps.nSize)
-        {
-            DecodeH264Parameter_seq_parameter_set(&(avcCInfo.sps.pList)[nOffset + 2], nLen, &sps);
-            nId = UpdateH264InfoWindow_SPS(&sps, hListView, nId);
-            nOffset += nLen + 2;
-        }
-        else { break; }
-    }
-    /* PPS 条目 */
-    nId = UpdateBoxInfoWindow_InsertLine(TEXT(""), TEXT(""), nId, hListView);
-    nOffset = 0;
-    for (uint8_t iLoop = 0; iLoop < avcCInfo.pps.nNum; iLoop++)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%s%u"), GetMP4_avcC_FieldName(VIDEO_MP4_avcC_BOX_FIELD_AVC_PPS), iLoop + 1);
-        nId = UpdateBoxInfoWindow_InsertLine(pText, TEXT(""), nId, hListView);
-        nLen = ReadMP4Data2ByteMSB(&avcCInfo.pps.pList[nOffset]);
-        if ((nLen + 2) <= avcCInfo.pps.nSize)
-        {
-            DecodeH264Parameter_pic_parameter_set(&(avcCInfo.pps.pList)[nOffset + 2], nLen, &pps, NULL);
-            nId = UpdateH264InfoWindow_PPS(&pps, hListView, nId);
-            nOffset += nLen + 2;
-        }
-        else { break; }
-    }
-}
-static void UpdateBoxInfoWindow_pasp(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
-
-    /* 像素宽高比 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u:%u"), ReadMP4Data4ByteMSB(&pData[0]), ReadMP4Data4ByteMSB(&pData[4]));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_pasp_FieldName(VIDEO_MP4_pasp_BOX_FIELD_PIXEL_ASPECT_RATIO), pText, nId, hListView);
-}
-static void UpdateBoxInfoWindow_btrt(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
-
-    /* 解码缓存大小 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u 字节"), ReadMP4Data4ByteMSB(&pData[0]));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_btrt_FieldName(VIDEO_MP4_btrt_BOX_FIELD_BUFFER_SIZE), pText, nId, hListView);
-    /* 最大比特率 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u bps"), ReadMP4Data4ByteMSB(&pData[4]));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_btrt_FieldName(VIDEO_MP4_btrt_BOX_FIELD_MAX_BIT_RATE), pText, nId, hListView);
-    /* 平均比特率 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u bps"), ReadMP4Data4ByteMSB(&pData[8]));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_btrt_FieldName(VIDEO_MP4_btrt_BOX_FIELD_AVG_BIT_RATE), pText, nId, hListView);
-}
-static void UpdateBoxInfoWindow_stts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
-{
-    HWND hListView = mp4Info->box.hInfo;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault sttsInfo;
+    VIDEOMP4BOXINFO_stblSubBoxDefault sttsInfo;
     HANSIZE nLen = pBoxTree->mp4Box.nDataLen - 8;
     HANSIZE nOffset;
     uint32_t nSampleCount;
     uint32_t nSampleDelta;
 
-    DecodeBoxData_stsdSubBoxDefault(&(pBoxTree->mp4Box), &sttsInfo);
+    DecodeBoxData_stblSubBoxDefault(&(pBoxTree->mp4Box), &sttsInfo);
     nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &(sttsInfo.fbVF));
     nOffset = 0;
     for (uint32_t iLoop = 0; iLoop < sttsInfo.nCnt; iLoop++)
@@ -2206,18 +1964,18 @@ static void UpdateBoxInfoWindow_stts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_ctts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_ctts(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault cttsInfo;
+    VIDEOMP4BOXINFO_stblSubBoxDefault cttsInfo;
     HANSIZE nLen = pBoxTree->mp4Box.nDataLen - 8;
     HANSIZE nOffset;
     uint32_t nSampleCount;
     ULARGE_INTEGER nSampleOffset;
 
-    DecodeBoxData_stsdSubBoxDefault(&(pBoxTree->mp4Box), &cttsInfo);
+    DecodeBoxData_stblSubBoxDefault(&(pBoxTree->mp4Box), &cttsInfo);
     nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &(cttsInfo.fbVF));
     nOffset = 0;
     for (uint32_t iLoop = 0; iLoop < cttsInfo.nCnt; iLoop++)
@@ -2246,17 +2004,17 @@ static void UpdateBoxInfoWindow_ctts(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_stss(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stss(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault stssInfo;
+    VIDEOMP4BOXINFO_stblSubBoxDefault stssInfo;
     HANSIZE nLen = pBoxTree->mp4Box.nDataLen - 8;
     HANSIZE nOffset;
 
-    DecodeBoxData_stsdSubBoxDefault(&(pBoxTree->mp4Box), &stssInfo);
+    DecodeBoxData_stblSubBoxDefault(&(pBoxTree->mp4Box), &stssInfo);
     nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &(stssInfo.fbVF));
     nId = UpdateBoxInfoWindow_InsertLine(TEXT(""), TEXT(""), nId, hListView);
     nOffset = 0;
@@ -2280,19 +2038,19 @@ static void UpdateBoxInfoWindow_stss(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_stsc(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stsc(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
-    VIDEOMP4BOXINFO_stsdSubBoxDefault stscInfo;
+    VIDEOMP4BOXINFO_stblSubBoxDefault stscInfo;
     HANSIZE nLen = pBoxTree->mp4Box.nDataLen - 8;
     HANSIZE nOffset;
     uint32_t nFirstChunk;
     uint32_t nSamplesPerChunk;
     uint32_t nSamplesDescriptionId;
 
-    DecodeBoxData_stsdSubBoxDefault(&(pBoxTree->mp4Box), &stscInfo);
+    DecodeBoxData_stblSubBoxDefault(&(pBoxTree->mp4Box), &stscInfo);
     nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &(stscInfo.fbVF));
     nOffset = 0;
     for (uint32_t iLoop = 0; iLoop < stscInfo.nCnt; iLoop++)
@@ -2324,9 +2082,9 @@ static void UpdateBoxInfoWindow_stsc(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_stsz(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stsz(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
@@ -2368,9 +2126,9 @@ static void UpdateBoxInfoWindow_stsz(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_stco(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_stco(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
@@ -2403,9 +2161,9 @@ static void UpdateBoxInfoWindow_stco(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_co64(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_co64(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
+    (void)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
@@ -2439,10 +2197,10 @@ static void UpdateBoxInfoWindow_co64(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
         }
     }
 }
-static void UpdateBoxInfoWindow_smhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_smhd(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     HANINT nId = 0;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
@@ -2455,46 +2213,10 @@ static void UpdateBoxInfoWindow_smhd(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%.1f"), (HANFLOAT)nBalance / (HANFLOAT)0x100);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_smhd_FieldName(VIDEO_MP4_smhd_BOX_FIELD_BALANCE), pText, nId, hListView);
 }
-static void UpdateBoxInfoWindow_mp4a(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_meta(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
-    HWND hListView = mp4Info->box.hInfo;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
-    VIDEOMP4BOXINFO_mp4a mp4aInfo;
-
-    DecodeBoxData_mp4a(&(pBoxTree->mp4Box), &mp4aInfo);
-    /* ID */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nId);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_ID), pText, nId, hListView);
-    /* 版本 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nVersion);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_VERSION), pText, nId, hListView);
-    /* 修订 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nRevision);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_REVISION), pText, nId, hListView);
-    /* 供应商 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nVendor);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_VENDOR), pText, nId, hListView);
-    /* 声道数 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u（%s）"), mp4aInfo.nChannelCnt, GetMP4_mp4a_ChannelCountName(mp4aInfo.nChannelCnt));
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_CHANNEL_COUNT), pText, nId, hListView);
-    /* 样本大小 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nSampleSize);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_SIZE), pText, nId, hListView);
-    /* 压缩ID */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nCompressionId);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_COMPRESSION_ID), pText, nId, hListView);
-    /* 数据包大小 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), mp4aInfo.nPacketSize);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_PACKET_SIZE), pText, nId, hListView);
-    /* 采样率 */
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%g Hz"), mp4aInfo.nSampleRate);
-    nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mp4a_FieldName(VIDEO_MP4_mp4a_BOX_FIELD_SAMPLE_RATE), pText, nId, hListView);
-}
-static void UpdateBoxInfoWindow_meta(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
-{
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANINT nId = 0;
     VIDEOMP4BOXINFOFULLBOXVERFLAGS fbVF;
 
@@ -2502,10 +2224,10 @@ static void UpdateBoxInfoWindow_meta(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
     nId = UpdateBoxInfoWindow_FullBoxVersionFlags(nId, hListView, &fbVF);
     nId = UpdateBoxInfoWindow_BlankBox(&pData[4], pBoxTree->mp4Box.nDataLen - 4, nId, hListView);
 }
-static void UpdateBoxInfoWindow_data(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTRA mp4Info)
+static void UpdateBoxInfoWindow_data(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam)
 {
+    (void)pParam;
     const uint8_t* pData = pBoxTree->mp4Box.pData;
-    HWND hListView = mp4Info->box.hInfo;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     WCHAR pWText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     CHAR pMText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
@@ -2540,46 +2262,20 @@ static void UpdateBoxInfoWindow_data(PVIDEOMP4BOXTREE pBoxTree, PVIDEOMP4WNDEXTR
 
 static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, PVIDEOMP4WNDEXTRA mp4Info)
 {
+    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     const uint8_t* pData = mp4Info->paramVideo.pData;
     HWND hListView = mp4Info->box.hInfo;
     PVIDEOMP4BOXINFO pBoxInfo = &(mp4Info->box.boxInfo);
     PVIDEOMP4TRACK pTrack = pBoxInfo->track.pList;
     PVIDEOMP4DECODEINFOSAMPLE pSample = &(pTrack[nTrackId].pSample[nSampleId]);
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANINT nId = 0;
     const uint8_t* pSampleData;
-    VIDEOH264SLICE slice;
-    VIDEOH264PARAMLIST paramList = {
-        .spsList = {
-            .nCnt = pTrack[nTrackId].avcC.sps.nNum,
-            .pSPS = pTrack[nTrackId].avcC.sps.pSPS,
-        },
-        .ppsList = {
-            .nCnt = pTrack[nTrackId].avcC.pps.nNum,
-            .pPPS = pTrack[nTrackId].avcC.pps.pPPS,
-        },
-    };
-    const uint8_t* pNalData;
-    VIDEOH264_nal_unit nalUnit;
     uint32_t nSampleSize;
-    uint32_t nNalSize;
-    uint32_t nNalOffset = 0;
-    uint32_t nDecodedSliceLen = 0;
+    HANINT nId = 0;
     
     pSampleData = &pData[pTrack[nTrackId].pSample[nSampleId].sOffset];
     nSampleSize = pTrack[nTrackId].pSample[nSampleId].nSize;
-    
-    do {
-        pNalData = &pSampleData[nNalOffset];
-        nNalSize = ReadMP4Data4ByteMSB(pNalData);
-        GetNalUnit(pNalData[4], &nalUnit);
-        if (true == H264DecodeBy_slice_layer_without_partitioning(&nalUnit))
-        {
-            nDecodedSliceLen = DecodeH264Parameter_slice_header(&pNalData[4], nNalSize, &slice, &paramList);
-            break;
-        }
-        nNalOffset += nNalSize + 4;
-    } while (nNalOffset < nSampleSize);
+
+    UpdateBoxInfoWindowSample(pSampleData, nSampleSize, pTrack[nTrackId].decoder.table.pType[0], hListView, pTrack[nTrackId].decoder.table.pTable[0]);
     
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), nTrackId);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID), pText, nId, hListView);
@@ -2601,612 +2297,6 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_PTS), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->timeDuration);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_DURATION), pText, nId, hListView);
-
-    if (0 < nDecodedSliceLen)
-    {
-        nId = UpdateBoxInfoWindow_InsertLine(TEXT(""), TEXT(""), nId, hListView);
-        nId = UpdateH264InfoWindow_Slice(&slice, hListView, nId);
-    }
-}
-
-static HANINT UpdateH264InfoWindow_SPS(PCVIDEOH264SPS pSPS, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->nal_ref_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_ref_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->nal_unit_type);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_unit_type"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->profile_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("profile_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set0_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set0_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set1_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set1_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set2_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set2_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set3_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set3_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set4_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set4_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->constraint_set5_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constraint_set5_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->level_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("level_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->seq_parameter_set_id);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("seq_parameter_set_id"), pText, nRet, hListView);
-    if (TRUE == SPSProfileIdcHasExtendedData(pSPS->profile_idc))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->chroma_format_idc);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("chroma_format_idc"), pText, nRet, hListView);
-        if (3 == pSPS->chroma_format_idc)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->separate_colour_plane_flag);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("separate_colour_plane_flag"), pText, nRet, hListView);
-        }
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->bit_depth_luma_minus8);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("bit_depth_luma_minus8"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->bit_depth_chroma_minus8);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("bit_depth_chroma_minus8"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->qpprime_y_zero_transform_bypass_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("qpprime_y_zero_transform_bypass_flag"), pText, nRet, hListView);
-        if (0 != pSPS->seq_scaling_matrix_present_flag)
-        {
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("scaling_list 未实现"), TEXT(""), nRet, hListView);
-        }
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->log2_max_frame_num_minus4);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("log2_max_frame_num_minus4"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->pic_order_cnt_type);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_order_cnt_type"), pText, nRet, hListView);
-    if (0 == pSPS->pic_order_cnt_type)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->log2_max_pic_order_cnt_lsb_minus4);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("log2_max_pic_order_cnt_lsb_minus4"), pText, nRet, hListView);
-    }
-    else if (1 == pSPS->pic_order_cnt_type)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->delta_pic_order_always_zero_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("delta_pic_order_always_zero_flag"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSPS->offset_for_non_ref_pic);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("offset_for_non_ref_pic"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSPS->offset_for_top_to_bottom_field);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("offset_for_top_to_bottom_field"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->num_ref_frames_in_pic_order_cnt_cycle);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_frames_in_pic_order_cnt_cycle"), pText, nRet, hListView);
-    }
-    else { }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->max_num_ref_frames);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_num_ref_frames"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->gaps_in_frame_num_value_allowed_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("gaps_in_frame_num_value_allowed_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->pic_width_in_mbs_minus1);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_width_in_mbs_minus1"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->pic_height_in_map_units_minus1);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_height_in_map_units_minus1"), pText, nRet, hListView);
-    if (0 == pSPS->frame_mbs_only_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->mb_adaptive_frame_field_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("mb_adaptive_frame_field_flag"), pText, nRet, hListView);
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->direct_8x8_inference_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("direct_8x8_inference_flag"), pText, nRet, hListView);
-    if (0 != pSPS->frame_cropping_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->frame_crop_left_offset);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("frame_crop_left_offset"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->frame_crop_right_offset);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("frame_crop_right_offset"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->frame_crop_top_offset);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("frame_crop_top_offset"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSPS->frame_crop_bottom_offset);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("frame_crop_bottom_offset"), pText, nRet, hListView);
-    }
-    if (0 != pSPS->vui_parameters_present_flag)
-    {
-        nRet = UpdateH264InfoWindow_VUIParam(&(pSPS->vui_parameters), hListView, nRet);
-    }
-
-    return nRet;
-}
-static HANINT UpdateH264InfoWindow_VUIParam(PCVIDEOH264PARAMETER_vui_parameters pVUI, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    if (0 != pVUI->aspect_ratio_info_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->aspect_ratio_idc);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("aspect_ratio_idc"), pText, nRet, hListView);
-        if (VIDEO_H264_EXTENDED_SAR == pVUI->aspect_ratio_idc)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u:%u"), pVUI->sar_width, pVUI->sar_height);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("Extended_SAR"), pText, nRet, hListView);
-        }
-    }
-    if (0 != pVUI->overscan_info_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->overscan_appropriate_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("overscan_appropriate_flag"), pText, nRet, hListView);
-    }
-    if (0 != pVUI->video_signal_type_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->video_format);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("video_format"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->video_full_range_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("video_full_range_flag"), pText, nRet, hListView);
-        if (0 != pVUI->colour_description_present_flag)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->colour_primaries);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("colour_primaries"), pText, nRet, hListView);
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->transfer_characteristics);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("transfer_characteristics"), pText, nRet, hListView);
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->matrix_coefficients);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("matrix_coefficients"), pText, nRet, hListView);
-        }
-    }
-    if (0 != pVUI->chroma_loc_info_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->chroma_sample_loc_type_top_field);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("chroma_sample_loc_type_top_field"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->chroma_sample_loc_type_bottom_field);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("chroma_sample_loc_type_bottom_field"), pText, nRet, hListView);
-    }
-    if (0 != pVUI->timing_info_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->num_units_in_tick);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_units_in_tick"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->time_scale);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("time_scale"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->fixed_frame_rate_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("fixed_frame_rate_flag"), pText, nRet, hListView);
-    }
-    if (0 != pVUI->nal_hrd_parameters_present_flag) { nRet = UpdateH264InfoWindow_HRDParam(&(pVUI->nal.hrd_parameters), TEXT("nal."), hListView, nRet); }
-    if (0 != pVUI->vcl_hrd_parameters_present_flag) { nRet = UpdateH264InfoWindow_HRDParam(&(pVUI->vcl.hrd_parameters), TEXT("vcl."), hListView, nRet); }
-    if ((0 != pVUI->nal_hrd_parameters_present_flag) || (0 != pVUI->vcl_hrd_parameters_present_flag))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->low_delay_hrd_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("low_delay_hrd_flag"), pText, nRet, hListView);
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->pic_struct_present_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_struct_present_flag"), pText, nRet, hListView);
-    if (0 != pVUI->bitstream_restriction_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->motion_vectors_over_pic_boundaries_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("motion_vectors_over_pic_boundaries_flag"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->max_bytes_per_pic_denom);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_bytes_per_pic_denom"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->max_bits_per_mb_denom);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_bits_per_mb_denom"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->log2_max_mv_length_horizontal);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("log2_max_mv_length_horizontal"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->log2_max_mv_length_vertical);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("log2_max_mv_length_vertical"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->max_num_reorder_frames);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_num_reorder_frames"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pVUI->max_dec_frame_buffering);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_dec_frame_buffering"), pText, nRet, hListView);
-    }
-
-    return nRet;
-}
-static HANINT UpdateH264InfoWindow_HRDParam(PCVIDEOH264PARAMETER_hrd_parameters pHRD, HANPCSTR pHeader, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANCHAR pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    HANPSTR pFieldName;
-    HANSIZE nTextLen;
-    HANSIZE nFieldSize;
-
-    HAN_strncpy(pField, pHeader, HAN_VIDEO_MP4_TEXT_BUF_SIZE);
-    pField[HAN_VIDEO_MP4_TEXT_BUF_SIZE - 1] = TEXT('\0');
-    nTextLen = HAN_strlen(pField);
-    pFieldName = &pField[nTextLen];
-    nFieldSize = HAN_VIDEO_MP4_TEXT_BUF_SIZE - nTextLen;
-
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->cpb_cnt_minus1);
-    HAN_strncpy(pFieldName, TEXT("cpb_cnt_minus1"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->bit_rate_scale);
-    HAN_strncpy(pFieldName, TEXT("bit_rate_scale"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->cpb_size_scale);
-    HAN_strncpy(pFieldName, TEXT("cpb_size_scale"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->initial_cpb_removal_delay_length_minus1);
-    HAN_strncpy(pFieldName, TEXT("initial_cpb_removal_delay_length_minus1"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->cpb_removal_delay_length_minus1);
-    HAN_strncpy(pFieldName, TEXT("cpb_removal_delay_length_minus1"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->dpb_output_delay_length_minus1);
-    HAN_strncpy(pFieldName, TEXT("dpb_output_delay_length_minus1"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pHRD->time_offset_length);
-    HAN_strncpy(pFieldName, TEXT("time_offset_length"), nFieldSize);
-    nRet = UpdateBoxInfoWindow_InsertLine(pField, pText, nRet, hListView);
-
-    return nRet;
-}
-
-static HANINT UpdateH264InfoWindow_PPS(PCVIDEOH264PPS pPPS, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->nal_ref_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_ref_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->nal_unit_type);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_unit_type"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->pic_parameter_set_id);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_parameter_set_id"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->seq_parameter_set_id);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("seq_parameter_set_id"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->entropy_coding_mode_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("entropy_coding_mode_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->bottom_field_pic_order_in_frame_present_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("bottom_field_pic_order_in_frame_present_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->num_slice_groups_minus1);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_slice_groups_minus1"), pText, nRet, hListView);
-    if (0 < pPPS->num_slice_groups_minus1)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->slice_group_map_type);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_group_map_type"), pText, nRet, hListView);
-        if (0 == pPPS->slice_group_map_type)
-        {
-            ;
-        }
-        else if (2 == pPPS->slice_group_map_type)
-        {
-            ;
-        }
-        else if ((3 == pPPS->slice_group_map_type) ||
-                 (4 == pPPS->slice_group_map_type) ||
-                 (5 == pPPS->slice_group_map_type))
-        {
-            ;
-        }
-        else if (6 == pPPS->slice_group_map_type)
-        {
-            ;
-        }
-        else { }
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->num_ref_idx_l0_default_active_minus1);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_idx_l0_default_active_minus1"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->num_ref_idx_l1_default_active_minus1);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_idx_l1_default_active_minus1"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->weighted_pred_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("weighted_pred_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->weighted_bipred_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("weighted_bipred_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pPPS->pic_init_qp_minus26);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_init_qp_minus26"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pPPS->pic_init_qs_minus26);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_init_qs_minus26"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pPPS->chroma_qp_index_offset);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("chroma_qp_index_offset"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->deblocking_filter_control_present_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("deblocking_filter_control_present_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->constrained_intra_pred_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("constrained_intra_pred_flag"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->redundant_pic_cnt_present_flag);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("redundant_pic_cnt_present_flag"), pText, nRet, hListView);
-    if (TRUE == pPPS->bMoreRbspData)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->transform_8x8_mode_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("transform_8x8_mode_flag"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->pic_scaling_matrix_present_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_scaling_matrix_present_flag"), pText, nRet, hListView);
-        if (0 != pPPS->pic_scaling_matrix_present_flag)
-        {
-            ;
-        }
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pPPS->second_chroma_qp_index_offset);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("second_chroma_qp_index_offset"), pText, nRet, hListView);
-    }
-
-    return nRet;
-}
-
-static HANINT UpdateH264InfoWindow_Slice(PCVIDEOH264SLICE pSlice, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-    PCVIDEOH264SPS pSPS = pSlice->pSPS;
-    PCVIDEOH264PPS pPPS = pSlice->pPPS;
-    uint8_t idrPicFlag = GetIdrPicFlag(pSlice->slice_header.nalUnit.nal_unit_type);
-    VIDEOH264SLICETYPE sliceType = DecodeH264NormalizeSliceType(pSlice->slice_header.slice_type);
-
-    /* slice_header */
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("Slice Header"), TEXT(""), nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.nalUnit.nal_ref_idc);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_ref_idc"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.nalUnit.nal_unit_type);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("nal_unit_type"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.first_mb_in_slice);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("first_mb_in_slice"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.slice_type);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_type"), pText, nRet, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.pic_parameter_set_id);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_parameter_set_id"), pText, nRet, hListView);
-    if (1 == pSPS->separate_colour_plane_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.colour_plane_id);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("colour_plane_id"), pText, nRet, hListView);
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.frame_num);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("frame_num"), pText, nRet, hListView);
-    if (0 == pSPS->frame_mbs_only_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.field_pic_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("field_pic_flag"), pText, nRet, hListView);
-        if (0 != pSlice->slice_header.field_pic_flag)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.bottom_field_flag);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("bottom_field_flag"), pText, nRet, hListView);
-        }
-    }
-    if (0 != idrPicFlag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.idr_pic_id);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("idr_pic_id"), pText, nRet, hListView);
-    }
-    if (0 == pSPS->pic_order_cnt_type)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.pic_order_cnt_lsb);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pic_order_cnt_lsb"), pText, nRet, hListView);
-        if ((0 != pPPS->bottom_field_pic_order_in_frame_present_flag) && (0 == pSlice->slice_header.field_pic_flag))
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.delta_pic_order_cnt_bottom);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("delta_pic_order_cnt_bottom"), pText, nRet, hListView);
-        }
-    }
-    if ((1 == pSPS->pic_order_cnt_type) && (0 == pSPS->delta_pic_order_always_zero_flag))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.delta_pic_order_cnt[0]);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("delta_pic_order_cnt[0]"), pText, nRet, hListView);
-        if ((0 != pPPS->bottom_field_pic_order_in_frame_present_flag) && (0 == pSlice->slice_header.field_pic_flag))
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.delta_pic_order_cnt[1]);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("delta_pic_order_cnt[1]"), pText, nRet, hListView);
-        }
-    }
-    if (0 != pPPS->redundant_pic_cnt_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.redundant_pic_cnt);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("redundant_pic_cnt"), pText, nRet, hListView);
-    }
-    if (VIDEO_H264_SLICE_TYPE_B == sliceType)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.direct_spatial_mv_pred_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("direct_spatial_mv_pred_flag"), pText, nRet, hListView);
-    }
-    if ((VIDEO_H264_SLICE_TYPE_P == sliceType) || (VIDEO_H264_SLICE_TYPE_SP == sliceType) || (VIDEO_H264_SLICE_TYPE_B == sliceType))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.num_ref_idx_active_override_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_idx_active_override_flag"), pText, nRet, hListView);
-        if (0 != pSlice->slice_header.num_ref_idx_active_override_flag)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.num_ref_idx_l0_active_minus1);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_idx_l0_active_minus1"), pText, nRet, hListView);
-            if (VIDEO_H264_SLICE_TYPE_B == sliceType)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.num_ref_idx_l1_active_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("num_ref_idx_l1_active_minus1"), pText, nRet, hListView);
-            }
-        }
-    }
-    if ((20 == pSlice->slice_header.nalUnit.nal_unit_type) || (21 == pSlice->slice_header.nalUnit.nal_unit_type))
-    {
-        nRet = UpdateH264InfoWindow_RefPicListMVCModification(&(pSlice->slice_header.ref_pic_list_mvc), sliceType, hListView, nRet);
-    }
-    else
-    {
-        nRet = UpdateH264InfoWindow_RefPicListModification(&(pSlice->slice_header.ref_pic_list_mvc), sliceType, hListView, nRet);
-    }
-    if (((0 != pPPS->weighted_pred_flag) && ((VIDEO_H264_SLICE_TYPE_P == sliceType) || (VIDEO_H264_SLICE_TYPE_SP == sliceType))) ||
-        ((1 == pPPS->weighted_bipred_idc) && (VIDEO_H264_SLICE_TYPE_B == sliceType)))
-    {
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("pred_weight_table"), TEXT("未实现"), nRet, hListView);
-    }
-    if (0 != pSlice->slice_header.nalUnit.nal_ref_idc)
-    {
-        nRet = UpdateH264InfoWindow_DecRefPicMarking(&(pSlice->slice_header.dec_ref_pic_marking), idrPicFlag, hListView, nRet);
-    }
-    if ((0 != pPPS->entropy_coding_mode_flag) && (VIDEO_H264_SLICE_TYPE_I != sliceType) && (VIDEO_H264_SLICE_TYPE_SI != sliceType))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.cabac_init_idc);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("cabac_init_idc"), pText, nRet, hListView);
-    }
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.slice_qp_delta);
-    nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_qp_delta"), pText, nRet, hListView);
-    if ((VIDEO_H264_SLICE_TYPE_SP == sliceType) || (VIDEO_H264_SLICE_TYPE_SI == sliceType))
-    {
-        if (VIDEO_H264_SLICE_TYPE_SP == sliceType)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.sp_for_switch_flag);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("sp_for_switch_flag"), pText, nRet, hListView);
-        }
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.slice_qs_delta);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_qs_delta"), pText, nRet, hListView);
-    }
-    if (0 != pPPS->deblocking_filter_control_present_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.disable_deblocking_filter_idc);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("disable_deblocking_filter_idc"), pText, nRet, hListView);
-        if (1 != pSlice->slice_header.disable_deblocking_filter_idc)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.slice_alpha_c0_offset_div2);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_alpha_c0_offset_div2"), pText, nRet, hListView);
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%d"), pSlice->slice_header.slice_beta_offset_div2);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_beta_offset_div2"), pText, nRet, hListView);
-        }
-    }
-    if ((0 < pPPS->num_slice_groups_minus1) && (3 <= pPPS->slice_group_map_type) && (pPPS->slice_group_map_type <= 5))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_header.slice_group_change_cycle);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("slice_group_change_cycle"), pText, nRet, hListView);
-    }
-    /* slice_data */
-    if (0 != pPPS->entropy_coding_mode_flag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pSlice->slice_data.cabac_alignment_one_bit.nLen);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("cabac_alignment_one_bit 位数"), pText, nRet, hListView);
-    }
-
-    return nRet;
-}
-static HANINT UpdateH264InfoWindow_RefPicListMVCModification(PCVIDEOH264PARAMETER_ref_pic_list_mvc pRefPicListMVC, uint32_t sliceType, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    if ((2 != sliceType) && (4 != sliceType))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->ref_pic_list_modification_flag_l0);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("ref_pic_list_modification_flag_l0"), pText, nRet, hListView);
-        if (0 != pRefPicListMVC->ref_pic_list_modification_flag_l0)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->modification_of_pic_nums_idc);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("modification_of_pic_nums_idc"), pText, nRet, hListView);
-            if (0 != pRefPicListMVC->bValid_abs_diff_pic_num_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->abs_diff_pic_num_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_pic_num_minus1"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicListMVC->bValid_long_term_pic_num)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->long_term_pic_num);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_pic_num"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicListMVC->bValid_abs_diff_view_idx_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->abs_diff_view_idx_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_view_idx_minus1"), pText, nRet, hListView);
-            }
-        }
-    }
-    if (1 == sliceType)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->ref_pic_list_modification_flag_l1);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("ref_pic_list_modification_flag_l1"), pText, nRet, hListView);
-        if (0 != pRefPicListMVC->ref_pic_list_modification_flag_l1)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->modification_of_pic_nums_idc);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("modification_of_pic_nums_idc"), pText, nRet, hListView);
-            if (0 != pRefPicListMVC->bValid_abs_diff_pic_num_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->abs_diff_pic_num_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_pic_num_minus1"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicListMVC->bValid_long_term_pic_num)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->long_term_pic_num);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_pic_num"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicListMVC->bValid_abs_diff_view_idx_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicListMVC->abs_diff_view_idx_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_view_idx_minus1"), pText, nRet, hListView);
-            }
-        }
-    }
-
-    return nRet;
-}
-static HANINT UpdateH264InfoWindow_RefPicListModification(PCVIDEOH264PARAMETER_ref_pic_list pRefPicList, uint32_t sliceType, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    if ((2 != sliceType) && (4 != sliceType))
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->ref_pic_list_modification_flag_l0);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("ref_pic_list_modification_flag_l0"), pText, nRet, hListView);
-        if (0 != pRefPicList->ref_pic_list_modification_flag_l0)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->modification_of_pic_nums_idc);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("modification_of_pic_nums_idc"), pText, nRet, hListView);
-            if (0 != pRefPicList->bValid_abs_diff_pic_num_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->abs_diff_pic_num_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_pic_num_minus1"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicList->bValid_long_term_pic_num)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->long_term_pic_num);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_pic_num"), pText, nRet, hListView);
-            }
-        }
-    }
-    if (1 == sliceType)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->ref_pic_list_modification_flag_l1);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("ref_pic_list_modification_flag_l1"), pText, nRet, hListView);
-        if (0 != pRefPicList->ref_pic_list_modification_flag_l1)
-        {
-            HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->modification_of_pic_nums_idc);
-            nRet = UpdateBoxInfoWindow_InsertLine(TEXT("modification_of_pic_nums_idc"), pText, nRet, hListView);
-            if (0 != pRefPicList->bValid_abs_diff_pic_num_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->abs_diff_pic_num_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("abs_diff_pic_num_minus1"), pText, nRet, hListView);
-            }
-            if (0 != pRefPicList->bValid_long_term_pic_num)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pRefPicList->long_term_pic_num);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_pic_num"), pText, nRet, hListView);
-            }
-        }
-    }
-
-    return nRet;
-}
-static HANINT UpdateH264InfoWindow_DecRefPicMarking(PCVIDEOH264PARAMETER_dec_ref_pic_marking pDecRefPicMarking, uint8_t idrPicFlag, HWND hListView, HANINT nStartId)
-{
-    HANINT nRet = nStartId;
-    HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
-
-    if (0 != idrPicFlag)
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->no_output_of_prior_pics_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("no_output_of_prior_pics_flag"), pText, nRet, hListView);
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->long_term_reference_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_reference_flag"), pText, nRet, hListView);
-    }
-    else
-    {
-        HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->adaptive_ref_pic_marking_mode_flag);
-        nRet = UpdateBoxInfoWindow_InsertLine(TEXT("adaptive_ref_pic_marking_mode_flag"), pText, nRet, hListView);
-        if (0 != pDecRefPicMarking->adaptive_ref_pic_marking_mode_flag)
-        {
-            if (0 != pDecRefPicMarking->bValid_difference_of_pic_nums_minus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->difference_of_pic_nums_minus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("difference_of_pic_nums_minus1"), pText, nRet, hListView);
-            }
-            if (0 != pDecRefPicMarking->bValid_long_term_pic_num)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->long_term_pic_num);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_pic_num"), pText, nRet, hListView);
-            }
-            if (0 != pDecRefPicMarking->bValid_long_term_frame_idx)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->long_term_frame_idx);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("long_term_frame_idx"), pText, nRet, hListView);
-            }
-            if (0 != pDecRefPicMarking->bValid_max_long_term_frame_idx_plus1)
-            {
-                HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT("%u"), pDecRefPicMarking->max_long_term_frame_idx_plus1);
-                nRet = UpdateBoxInfoWindow_InsertLine(TEXT("max_long_term_frame_idx_plus1"), pText, nRet, hListView);
-            }
-        }
-    }
-
-    return nRet;
 }
 
 static HANSIZE DecodeBoxDataReadDataByVersion(const uint8_t* pData, uint8_t nVersion, PULARGE_INTEGER pLargeInt)
@@ -3403,62 +2493,7 @@ static BOOL DecodeBoxData_url_(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_url_ purl_)
 
     return bRet;
 }
-static void DecodeBoxData_avc1(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_avc1 pavc1)
-{
-    const uint8_t* pData = pBox->pData;
-    HANSIZE nOffset = 0;
-    
-    nOffset += 6;
-    pavc1->pRawData = pData;
-    pavc1->nDataRefIndex = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->nVersion = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->nRevision = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->cVendor = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nTemporalQuality = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nSpatialQuality = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nWidth = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->nHeight = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->nHorizResolution.u32 = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nHorizResolution.nPhy = (HANDOUBLE)(pavc1->nHorizResolution.u32) / (HANDOUBLE)0x10000;
-    pavc1->nVertResolution.u32 = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nVertResolution.nPhy = (HANDOUBLE)(pavc1->nVertResolution.u32) / (HANDOUBLE)0x10000;
-    pavc1->nDataSize = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pavc1->nFrameCount = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    memcpy(pavc1->pCompressorName, &pData[nOffset], 32); nOffset += 32;
-    pavc1->nDepth = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pavc1->nColorTable = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-}
-static void DecodeBoxData_avcC(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_avcC pavcC)
-{
-    const uint8_t* pData = pBox->pData;
-    HANSIZE nOffset = 0;
-    uint16_t nUnitLen;
-    
-    pavcC->pRawData = pData;
-    pavcC->nConfigurationVersion = pData[nOffset]; nOffset += 1;
-    pavcC->nAvcProfileIndication = pData[nOffset]; nOffset += 1;
-    pavcC->nProfileCompatibility = pData[nOffset]; nOffset += 1;
-    pavcC->nAvcLevelIndication = pData[nOffset]; nOffset += 1;
-    pavcC->nNALULengthSize = (pData[nOffset] & 0x03) + 1; nOffset += 1;
-    pavcC->sps.nNum = (pData[nOffset] & 0x1F); nOffset += 1;
-    pavcC->sps.pList = &pData[nOffset];
-    pavcC->sps.nSize = 0;
-    for (uint8_t iLoop = 0; iLoop < pavcC->sps.nNum; iLoop++)
-    {
-        nUnitLen = ReadMP4Data2ByteMSB(&pData[nOffset]);
-        nOffset += (HANSIZE)2 + nUnitLen;
-        pavcC->sps.nSize += (HANSIZE)2 + nUnitLen;
-    }
-    pavcC->pps.nNum = pData[nOffset]; nOffset += 1;
-    pavcC->pps.pList = &pData[nOffset];
-    for (uint8_t iLoop = 0; iLoop < pavcC->pps.nNum; iLoop++)
-    {
-        nUnitLen = ReadMP4Data2ByteMSB(&pData[nOffset]);
-        nOffset += (HANSIZE)2 + nUnitLen;
-        pavcC->pps.nSize += (HANSIZE)2 + nUnitLen;
-    }
-}
-static void DecodeBoxData_stsdSubBoxDefault(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsdSubBoxDefault pDef)
+static void DecodeBoxData_stblSubBoxDefault(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stblSubBoxDefault pDef)
 {
     const uint8_t* pData = pBox->pData;
 
@@ -3467,6 +2502,14 @@ static void DecodeBoxData_stsdSubBoxDefault(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO
     pDef->nCnt = ReadMP4Data4ByteMSB(&pData[4]);
     pDef->pEntry = &pData[8];
     pDef->nEntrySize = pBox->nDataLen - 8;
+}
+static void DecodeBoxData_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsd pstsd)
+{
+    const uint8_t* pData = pBox->pData;
+
+    pstsd->pRawData = pData;
+    DecodeBoxData_FullBoxVersionFlags(pData, &(pstsd->fbVF));
+    pstsd->nDecoderCnt = ReadMP4Data4ByteMSB(&pData[4]);
 }
 static void DecodeBoxData_stsz(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsz pstsz)
 {
@@ -3509,35 +2552,6 @@ static void DecodeBoxData_co64(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pco64
     pco64->pEntry = &pData[8];
     pco64->nEntrySize = pBox->nDataLen - 8;
 }
-static void DecodeBoxData_mp4a(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_mp4a pmp4a)
-{
-    const uint8_t* pData = pBox->pData;
-    HANSIZE nOffset = 6;
-    uint32_t nSampleRate;
-    
-    pmp4a->pRawData = pData;
-    pmp4a->nId = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nVersion = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nRevision = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nVendor = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pmp4a->nChannelCnt = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nSampleSize = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nCompressionId = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    pmp4a->nPacketSize = ReadMP4Data2ByteMSB(&pData[nOffset]); nOffset += 2;
-    nSampleRate = ReadMP4Data4ByteMSB(&pData[nOffset]); nOffset += 4;
-    pmp4a->nSampleRate = (HANDOUBLE)nSampleRate / (HANDOUBLE)0x10000;
-}
-
-static void DecodeBoxData_avcC_SPS(const uint8_t* pData, HANSIZE nLen, PVIDEOH264SPS pSPS)
-{
-    DecodeH264Parameter_seq_parameter_set(pData, (uint32_t)nLen, pSPS);
-    DecodeH264BinToVariableSPS(pSPS);
-}
-static void DecodeBoxData_avcC_PPS(const uint8_t* pData, HANSIZE nLen, PVIDEOH264PPS pPPS)
-{
-    DecodeH264Parameter_pic_parameter_set(pData, (uint32_t)nLen, pPPS, NULL);
-    DecodeH264BinToVariablePPS(pPPS);
-}
 
 #if 1 /* 解码 */
 static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame)
@@ -3547,38 +2561,18 @@ static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame)
     PVIDEOMP4BOXINFO pBoxInfo = &(mp4Info->box.boxInfo);
     PVIDEOMP4TRACK pTrack = pBoxInfo->track.pList;
     HANSIZE nTrackCnt = pBoxInfo->track.nCnt;
-    PVIDEOH264PICTUREINFO pPicInfo = &(mp4Info->decoder);
-    const uint8_t* pNalData;
     uint32_t nSampleSize;
     HANSIZE nSampleOffset;
-    uint32_t nNalSize;
-    uint32_t nNalOffset;
-    VIDEOH264PARAMLIST paramList;
-    VIDEOH264_nal_unit nalUnit;
 
     for (HANSIZE iLoop = 0; iLoop < nTrackCnt; iLoop++)
     {
         if (VIDEO_MP4_TRACK_HANDLER_TYPE_VIDEO == pTrack[iLoop].hdlr.handlerType.eType)
         {
-            paramList.spsList.nCnt = pTrack[iLoop].avcC.sps.nNum;
-            paramList.spsList.pSPS = pTrack[iLoop].avcC.sps.pSPS;
-            paramList.ppsList.nCnt = pTrack[iLoop].avcC.pps.nNum;
-            paramList.ppsList.pPPS = pTrack[iLoop].avcC.pps.pPPS;
             nSampleSize = pTrack[iLoop].pSample[nFrame].nSize;
             nSampleOffset = pTrack[iLoop].pSample[nFrame].sOffset;
 
-            nNalOffset = 0;
-            do {
-                pNalData = &pData[nSampleOffset + nNalOffset];
-                nNalSize = ReadMP4Data4ByteMSB(pNalData);
-                GetNalUnit(pNalData[4], &nalUnit);
-                if (true == H264DecodeBy_slice_layer_without_partitioning(&nalUnit))
-                {
-                    DecodeH264_slice_layer_without_partitioning(&pNalData[4], nNalSize, pPicInfo, &paramList);
-                    break;
-                }
-                nNalOffset += nNalSize + 4;
-            } while (nNalOffset < nSampleSize);
+            DecodeMedia(&pData[nSampleOffset], nSampleSize, pTrack[iLoop].decoder.table.pType[0], pTrack[iLoop].decoder.table.pTable[0]);
+
             break;
         }
     }

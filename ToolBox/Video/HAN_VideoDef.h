@@ -45,6 +45,7 @@ typedef struct tagVIDEORESOLUTION {
     uint32_t            pxWidth;
     uint32_t            pxHeight;
 } VIDEORESOLUTION, * PVIDEORESOLUTION;
+typedef const VIDEORESOLUTION* PCVIDEORESOLUTION;
 
 #ifdef __cplusplus
 }
