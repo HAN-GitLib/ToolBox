@@ -19,7 +19,7 @@ HANSIZE GetSubBoxOffset_MPEG4Audio(VIDEOMP4BOXTYPE boxType);
 
 UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback_MPEG4Audio(VIDEOMP4BOXTYPE boxType);
 
-void UpdateBoxInfoWindowSample_MPEG4Audio(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder);
+void UpdateBoxInfoWindowDecoderSample_MPEG4Audio(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder);
 
 void DecodeMedia_MPEG4Audio(const uint8_t* pData, HANSIZE nLen, uint8_t* pDecoder);
 

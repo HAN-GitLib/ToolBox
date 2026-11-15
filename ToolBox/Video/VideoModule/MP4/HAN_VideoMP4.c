@@ -2275,7 +2275,7 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     pSampleData = &pData[pTrack[nTrackId].pSample[nSampleId].sOffset];
     nSampleSize = pTrack[nTrackId].pSample[nSampleId].nSize;
 
-    UpdateBoxInfoWindowSample(pSampleData, nSampleSize, pTrack[nTrackId].decoder.table.pType[0], hListView, pTrack[nTrackId].decoder.table.pTable[0]);
+    UpdateBoxInfoWindowDecoderSample(pSampleData, nSampleSize, pTrack[nTrackId].decoder.table.pType[0], hListView, pTrack[nTrackId].decoder.table.pTable[0]);
     
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), nTrackId);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_TRACK_ID), pText, nId, hListView);

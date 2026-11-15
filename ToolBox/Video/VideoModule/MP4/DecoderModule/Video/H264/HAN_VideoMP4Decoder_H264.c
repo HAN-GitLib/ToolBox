@@ -155,7 +155,7 @@ UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback_H264(VIDEOMP4BOXTYPE 
     return pRet;
 }
 
-void UpdateBoxInfoWindowSample_H264(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder)
+void UpdateBoxInfoWindowDecoderSample_H264(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder)
 {
     PVIDEOMP4DECODERH264 pH264 = (PVIDEOMP4DECODERH264)pDecoder;
     VIDEOH264PARAMLIST paramList = {

@@ -21,7 +21,7 @@ HANSIZE GetSubBoxOffset(VIDEOMP4DECODERTYPE decoderType, VIDEOMP4BOXTYPE boxType
 
 UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback(VIDEOMP4DECODERTYPE decoderType, VIDEOMP4BOXTYPE boxType);
 
-void UpdateBoxInfoWindowSample(const uint8_t* pData, HANSIZE nLen, VIDEOMP4DECODERTYPE decoderType, HWND hWindow, uint8_t* pDecoder);
+void UpdateBoxInfoWindowDecoderSample(const uint8_t* pData, HANSIZE nLen, VIDEOMP4DECODERTYPE decoderType, HWND hWindow, uint8_t* pDecoder);
 
 void DecodeMedia(const uint8_t* pData, HANSIZE nLen, VIDEOMP4DECODERTYPE decoderType, uint8_t* pDecoder);
 

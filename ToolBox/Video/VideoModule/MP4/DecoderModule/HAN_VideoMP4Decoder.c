@@ -12,7 +12,7 @@ static const VIDEOMP4DECODERHANDLER sg_pDecoderInfo[VIDEO_MP4_DECODER_TYPE_CNT] 
         .GetBoxName = GetBoxName_H264,
         .GetSubBoxOffset = GetSubBoxOffset_H264,
         .GetUpdateBoxInfoWindowCallback = GetUpdateBoxInfoWindowCallback_H264,
-        .UpdateBoxInfoWindowSample = UpdateBoxInfoWindowSample_H264,
+        .UpdateBoxInfoWindowDecoderSample = UpdateBoxInfoWindowDecoderSample_H264,
         .DecodeMedia = DecodeMedia_H264,
     },
     [VIDEO_MP4_DECODER_TYPE_MPEG4AUDIO] = {
@@ -22,7 +22,7 @@ static const VIDEOMP4DECODERHANDLER sg_pDecoderInfo[VIDEO_MP4_DECODER_TYPE_CNT] 
         .GetBoxName = GetBoxName_MPEG4Audio,
         .GetSubBoxOffset = GetSubBoxOffset_MPEG4Audio,
         .GetUpdateBoxInfoWindowCallback = GetUpdateBoxInfoWindowCallback_MPEG4Audio,
-        .UpdateBoxInfoWindowSample = UpdateBoxInfoWindowSample_MPEG4Audio,
+        .UpdateBoxInfoWindowDecoderSample = UpdateBoxInfoWindowDecoderSample_MPEG4Audio,
         .DecodeMedia = DecodeMedia_MPEG4Audio,
     },
 };
@@ -100,11 +100,11 @@ UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback(VIDEOMP4DECODERTYPE d
     return pRet;
 }
 
-void UpdateBoxInfoWindowSample(const uint8_t* pData, HANSIZE nLen, VIDEOMP4DECODERTYPE decoderType, HWND hWindow, uint8_t* pDecoder)
+void UpdateBoxInfoWindowDecoderSample(const uint8_t* pData, HANSIZE nLen, VIDEOMP4DECODERTYPE decoderType, HWND hWindow, uint8_t* pDecoder)
 {
     if ((0 <= decoderType) && (decoderType < VIDEO_MP4_DECODER_TYPE_CNT))
     {
-        sg_pDecoderInfo[decoderType].UpdateBoxInfoWindowSample(pData, nLen, hWindow, pDecoder);
+        sg_pDecoderInfo[decoderType].UpdateBoxInfoWindowDecoderSample(pData, nLen, hWindow, pDecoder);
     }
 }
 

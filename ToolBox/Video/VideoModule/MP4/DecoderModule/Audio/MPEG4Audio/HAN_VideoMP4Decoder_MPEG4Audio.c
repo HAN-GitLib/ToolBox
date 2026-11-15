@@ -78,7 +78,7 @@ UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback_MPEG4Audio(VIDEOMP4BO
     return pRet;
 }
 
-void UpdateBoxInfoWindowSample_MPEG4Audio(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder)
+void UpdateBoxInfoWindowDecoderSample_MPEG4Audio(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder)
 {
     (void)pData;
     (void)nLen;

@@ -19,7 +19,7 @@ HANSIZE GetSubBoxOffset_H264(VIDEOMP4BOXTYPE boxType);
 
 UPDATEBOXINFOWINDOWCALLBACK GetUpdateBoxInfoWindowCallback_H264(VIDEOMP4BOXTYPE boxType);
 
-void UpdateBoxInfoWindowSample_H264(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder);
+void UpdateBoxInfoWindowDecoderSample_H264(const uint8_t* pData, HANSIZE nLen, HWND hWindow, uint8_t* pDecoder);
 
 void DecodeMedia_H264(const uint8_t* pData, HANSIZE nLen, uint8_t* pDecoder);
 
