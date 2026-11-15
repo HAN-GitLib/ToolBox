@@ -30,15 +30,6 @@ typedef struct tagVIDEOMP4TRACK {
     VIDEOMP4DECODER                     decoder;
 } VIDEOMP4TRACK, * PVIDEOMP4TRACK;
 
-typedef struct tagVIDEOMP4BOXINFO {
-    struct {
-        PVIDEOMP4TRACK                  pList;
-        HANSIZE                         nCnt;
-        HANSIZE                         nTargetId;
-    } track;
-} VIDEOMP4BOXINFO, * PVIDEOMP4BOXINFO;
-typedef const VIDEOMP4BOXINFO* PCVIDEOMP4BOXINFO;
-
 typedef struct tagVIDEOMP4WNDEXTRA {
     HANDLE                          hHeap;
     HINSTANCE                       hInst;
@@ -58,7 +49,6 @@ typedef struct tagVIDEOMP4WNDEXTRA {
             HWND                    hUpDown;
         } sampleId;
         HTREEITEM                   hFileTree;
-        VIDEOMP4BOXINFO             boxInfo;
         struct {
             HANSIZE                 nCnt;
             PVIDEOMP4BOXTREE        pBoxTree;
@@ -68,6 +58,11 @@ typedef struct tagVIDEOMP4WNDEXTRA {
     struct {
         HANSIZE                     nSampleCnt;
     } size;
+    struct {
+        PVIDEOMP4TRACK              pList;
+        HANSIZE                     nCnt;
+        HANSIZE                     nTargetId;
+    } track;
     VIDEOMP4DECODER                 decoder;
     struct {
         HFONT                       hHex;
@@ -628,9 +623,9 @@ static void InitMP4BoxInfo(PVIDEOMP4WNDEXTRA mp4Info)
     mp4Info->box.map.pBoxTree = NULL;
     mp4Info->box.map.pChoosenBox = NULL;
     mp4Info->box.sampleId.bLock = FALSE;
-    mp4Info->box.boxInfo.track.nCnt = 0;
-    mp4Info->box.boxInfo.track.nTargetId = 0;
     mp4Info->size.nSampleCnt = 0;
+    mp4Info->track.nCnt = 0;
+    mp4Info->track.nTargetId = 0;
     mp4Info->decoder.table.nCnt = 0;
     mp4Info->decoder.buf.nSize = 0;
     mp4Info->pBufPtr = NULL;
@@ -706,7 +701,6 @@ static void PrintMP4Text4Bytes(HANCHAR pDest[5], const uint8_t pSrc[4])
 static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
 {
     PVIDEOMP4WNDEXTRA pRet;
-    PVIDEOMP4BOXINFO pBoxInfo = &(mp4Info->box.boxInfo);
     HANSIZE nBoxCnt = mp4Info->box.map.nCnt;
     SIZE_T nOffset;
     SIZE_T nBoxTreeSize;
@@ -717,7 +711,7 @@ static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
     SIZE_T nDecoderBufSize;
 
     nBoxTreeSize = sizeof(VIDEOMP4BOXTREE) * nBoxCnt;
-    nTrackSize = sizeof(VIDEOMP4TRACK) * pBoxInfo->track.nCnt;
+    nTrackSize = sizeof(VIDEOMP4TRACK) * mp4Info->track.nCnt;
     nSampleSize = sizeof(VIDEOMP4DECODEINFOSAMPLE) * mp4Info->size.nSampleCnt;
     nDecoderTypeSize = sizeof(VIDEOMP4DECODERTYPE) * mp4Info->decoder.table.nCnt;
     nDecoderTableSize = sizeof(*(mp4Info->decoder.table.pTable)) * mp4Info->decoder.table.nCnt;
@@ -737,7 +731,7 @@ static PVIDEOMP4WNDEXTRA ReallocMP4InfoMemory(PVIDEOMP4WNDEXTRA mp4Info)
     {
         nOffset = 0;
         pRet->box.map.pBoxTree = (PVIDEOMP4BOXTREE)&(pRet->pBuf[nOffset]); nOffset += nBoxTreeSize;
-        pRet->box.boxInfo.track.pList = (PVIDEOMP4TRACK)&(pRet->pBuf[nOffset]); nOffset += nTrackSize;
+        pRet->track.pList = (PVIDEOMP4TRACK)&(pRet->pBuf[nOffset]); nOffset += nTrackSize;
         pRet->decoder.table.pType = (PVIDEOMP4DECODERTYPE)&(pRet->pBuf[nOffset]); nOffset += nDecoderTypeSize;
         pRet->decoder.table.pTable = (uint8_t**)&(pRet->pBuf[nOffset]); nOffset += nDecoderTableSize;
         pRet->decoder.buf.pData = &(pRet->pBuf[nOffset]); nOffset += nDecoderBufSize;
@@ -829,8 +823,8 @@ static void UpdateBoxInfoWindow(PVIDEOMP4WNDEXTRA mp4Info, TVITEM* pItem)
 }
 static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info)
 {
-    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
-    HANSIZE nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
+    HANSIZE nTrackCnt = mp4Info->track.nCnt;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     VIDEOMP4TRACKHANDLERTYPE eType;
     HANINT nCursel = 0;
@@ -848,7 +842,7 @@ static void InitTrackIdListWindow(PVIDEOMP4WNDEXTRA mp4Info)
 }
 static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info)
 {
-    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
     HANINT nTrackId;
     HANSIZE nTrackCnt;
     HANSIZE nSampleCnt;
@@ -856,7 +850,7 @@ static void ChooseBoxInfoTrackCallback(PVIDEOMP4WNDEXTRA mp4Info)
     if (NULL != pTrack)
     {
         nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
-        nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
+        nTrackCnt = mp4Info->track.nCnt;
         if ((0 <= nTrackId) && (nTrackId < (HANINT)nTrackCnt))
         {
             nSampleCnt = pTrack[nTrackId].nSampleCnt;
@@ -898,7 +892,7 @@ static BOOL MP4Process(PVIDEOMP4WNDEXTRA mp4Info)
     HANSIZE nDecoderCnt = 0;
     HANSIZE nDecoderBufOffset = 0;
 
-    mp4Info->box.boxInfo.track.nTargetId = 0;
+    mp4Info->track.nTargetId = 0;
     boxProcess.mp4Info = mp4Info;
     boxProcess.pTree = NULL;
     boxProcess.pBoxCnt = &nBoxCnt;
@@ -928,7 +922,7 @@ static void ReadMP4BoxCallback_GetSize(PCVIDEOMP4BOX pBox, void* pParam)
     /* 处理子 BOX 前的预处理 */
     switch (boxType) {
         case VIDEO_MP4_BOX_TYPE_trak: { // 统计轨道数
-            mp4Info->box.boxInfo.track.nCnt++;
+            mp4Info->track.nCnt++;
         } break;
         case VIDEO_MP4_BOX_TYPE_tkhd: { // 获取分辨率
             if (TRUE == DecodeBoxData_tkhd(pBox, &tkhdInfo))
@@ -1041,7 +1035,7 @@ static void ReadMP4BoxCallback_Process(PCVIDEOMP4BOX pBox, void* pParam)
         }
     }
     /* 读完子 BOX 后的处理 */
-    pTrack = &(mp4Info->box.boxInfo.track.pList)[mp4Info->box.boxInfo.track.nTargetId];
+    pTrack = &(mp4Info->track.pList)[mp4Info->track.nTargetId];
     switch (boxType) {
         case VIDEO_MP4_BOX_TYPE_trak: { (void)UpdateMP4Info_trakProcess(mp4Info); } break;
         case VIDEO_MP4_BOX_TYPE_tkhd: { (void)DecodeBoxData_tkhd(pBox, &(pTrack->tkhd)); } break;
@@ -1062,7 +1056,7 @@ static void ReadMP4BoxCallback_Process_stsd(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXPROC
     const uint8_t* pData = pBox->pData;
     HANSIZE nOffset = sg_pMP4BoxTypeInfo[VIDEO_MP4_BOX_TYPE_stsd].nReadSubBoxOffset;
     HANSIZE nDecoderBufSize = mp4Info->decoder.buf.nSize;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList)[mp4Info->box.boxInfo.track.nTargetId];
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList)[mp4Info->track.nTargetId];
     HANPSIZE pDecoderCnt = pProcess->pDecoderCnt;
     HANPSIZE pDecoderBufOffset = pProcess->pDecoderBufOffset;
     uint8_t** pDecoderTable = pTrack->decoder.table.pTable;
@@ -1135,7 +1129,7 @@ static inline uint32_t ReadMP4Data4ByteMSB(const uint8_t pData[4])
 
 static void ReadMP4BoxCallback_ProcessInittrak(PVIDEOMP4WNDEXTRA mp4Info, PVIDEOMP4BOXPROCESS pProcess)
 {
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     
     pTrack->stts.pRawData = NULL;
     pTrack->ctts.pRawData = NULL;
@@ -1150,7 +1144,7 @@ static void ReadMP4BoxCallback_ProcessInittrak(PVIDEOMP4WNDEXTRA mp4Info, PVIDEO
 static BOOL UpdateMP4Info_trakProcess(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
 
     /* 解码样本信息 */
     pTrack->pSample = (PVIDEOMP4DECODEINFOSAMPLE)(mp4Info->pBufPtr);
@@ -1167,14 +1161,14 @@ static BOOL UpdateMP4Info_trakProcess(PVIDEOMP4WNDEXTRA mp4Info)
     }
 
     mp4Info->pBufPtr = (uint8_t*)(&(pTrack->pSample)[pTrack->nSampleCnt]);
-    (mp4Info->box.boxInfo.track.nTargetId)++;
+    (mp4Info->track.nTargetId)++;
 
     return bRet;
 }
 static BOOL UpdateMP4Info_stts(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     HANSIZE nSampleCnt = pTrack->nSampleCnt;
     const uint8_t* pEntry = pTrack->stts.pEntry;
@@ -1218,7 +1212,7 @@ static BOOL UpdateMP4Info_stts(PVIDEOMP4WNDEXTRA mp4Info)
 static BOOL UpdateMP4Info_ctts(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     HANSIZE nSampleCnt = pTrack->nSampleCnt;
     const uint8_t* pEntry = pTrack->ctts.pEntry;
@@ -1272,7 +1266,7 @@ static BOOL UpdateMP4Info_ctts(PVIDEOMP4WNDEXTRA mp4Info)
 static BOOL UpdateMP4Info_stss(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     HANSIZE nSampleCnt = pTrack->nSampleCnt;
     const uint8_t* pEntry = pTrack->stss.pEntry;
@@ -1356,7 +1350,7 @@ static BOOL UpdateMP4Info_stss(PVIDEOMP4WNDEXTRA mp4Info)
 static BOOL UpdateMP4Info_stsc(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     HANSIZE nSampleCnt = pTrack->nSampleCnt;
     const uint8_t* pEntry = pTrack->stsc.pEntry;
@@ -1447,7 +1441,7 @@ static BOOL UpdateMP4Info_stsc(PVIDEOMP4WNDEXTRA mp4Info)
 static BOOL UpdateMP4Info_stsz(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     const uint8_t* pEntry = pTrack->stsz.pEntry;
     HANSIZE nEntrySize = pTrack->stsz.nEntrySize;
@@ -1480,7 +1474,7 @@ static BOOL UpdateMP4Info_stsz(PVIDEOMP4WNDEXTRA mp4Info)
 static BOOL UpdateMP4Info_stco64(PVIDEOMP4WNDEXTRA mp4Info)
 {
     BOOL bRet = TRUE;
-    PVIDEOMP4TRACK pTrack = &(mp4Info->box.boxInfo.track.pList[mp4Info->box.boxInfo.track.nTargetId]);
+    PVIDEOMP4TRACK pTrack = &(mp4Info->track.pList[mp4Info->track.nTargetId]);
     PVIDEOMP4DECODEINFOSAMPLE pSample = pTrack->pSample;
     HANSIZE nSampleCnt = pTrack->nSampleCnt;
     uint8_t nDataSize = pTrack->stco64.nDataSize;
@@ -1638,7 +1632,7 @@ static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, 
     PVIDEOMP4WNDEXTRA mp4Info = (PVIDEOMP4WNDEXTRA)pParam;
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE];
     HANINT nTrackId = ComboBoxGetCursel(mp4Info->box.trackId.hList);
-    PVIDEOMP4TRACK pTrack = mp4Info->box.boxInfo.track.pList;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
     HANSIZE nSampleCnt;
     HANSIZE idSample;
     HANSIZE nTrackCnt;
@@ -1646,7 +1640,7 @@ static void UpdateBoxInfoWindow_mdat(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, 
 
     if (NULL != pTrack)
     {
-        nTrackCnt = mp4Info->box.boxInfo.track.nCnt;
+        nTrackCnt = mp4Info->track.nCnt;
         if ((0 <= nTrackId) && (nTrackId < (HANINT)nTrackCnt))
         {
             mp4Info->box.sampleId.bLock = TRUE;
@@ -2265,8 +2259,7 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     HANCHAR pText[HAN_VIDEO_MP4_TEXT_BUF_SIZE] = TEXT("");
     const uint8_t* pData = mp4Info->paramVideo.pData;
     HWND hListView = mp4Info->box.hInfo;
-    PVIDEOMP4BOXINFO pBoxInfo = &(mp4Info->box.boxInfo);
-    PVIDEOMP4TRACK pTrack = pBoxInfo->track.pList;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
     PVIDEOMP4DECODEINFOSAMPLE pSample = &(pTrack[nTrackId].pSample[nSampleId]);
     const uint8_t* pSampleData;
     uint32_t nSampleSize;
@@ -2558,9 +2551,8 @@ static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame)
 {
     BOOL bRet = TRUE;
     const uint8_t* pData = mp4Info->paramVideo.pData;
-    PVIDEOMP4BOXINFO pBoxInfo = &(mp4Info->box.boxInfo);
-    PVIDEOMP4TRACK pTrack = pBoxInfo->track.pList;
-    HANSIZE nTrackCnt = pBoxInfo->track.nCnt;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
+    HANSIZE nTrackCnt = mp4Info->track.nCnt;
     uint32_t nSampleSize;
     HANSIZE nSampleOffset;
 
