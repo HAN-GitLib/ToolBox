@@ -19,6 +19,8 @@ extern "C" {
 
 #define VIDEO_HEX_PRINT_LEN             10
 
+typedef uint64_t VIDEOPLAYTIME;  // 64 位表示 us，最多可以表示 50+ 亿小时（58 万年）
+
 typedef enum {
     WID_VIDEO_BASE = HAN_WID_BASE,
     WID_VIDEO_TOOLBAR,

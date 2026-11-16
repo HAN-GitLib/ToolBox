@@ -18,6 +18,7 @@
 
 typedef struct tagVIDEOMP4TRACK {
     VIDEOMP4BOXINFO_tkhd                tkhd;
+    VIDEOMP4BOXINFO_mdhd                mdhd;
     VIDEOMP4BOXINFO_hdlr                hdlr;
     VIDEOMP4BOXINFO_stblSubBoxDefault   stts;
     VIDEOMP4BOXINFO_stblSubBoxDefault   ctts;
@@ -62,8 +63,13 @@ typedef struct tagVIDEOMP4WNDEXTRA {
         PVIDEOMP4TRACK              pList;
         HANSIZE                     nCnt;
         HANSIZE                     nTargetId;
+        PVIDEOMP4TRACK              pMedia[VIDEO_MP4_TRACK_HANDLER_TYPE_CNT];
     } track;
     VIDEOMP4DECODER                 decoder;
+    struct {
+        VIDEOPLAYTIME               nCurr;
+        VIDEOPLAYTIME               nPrev;
+    } playTime;
     struct {
         HFONT                       hHex;
         HFONT                       hSys;
@@ -147,6 +153,7 @@ static BOOL UpdateMP4Info_stco64(PVIDEOMP4WNDEXTRA mp4Info);
 static HANINT UpdateBoxInfoWindow_FullBoxVersionFlags(HANINT nId, HWND hListView, PVIDEOMP4BOXINFOFULLBOXVERFLAGS pFB);
 static HANINT UpdateBoxInfoWindow_BlankBox(const uint8_t* pData, HANSIZE nLen, HANINT nId, HWND hListView);
 static void UpdateBoxInfoWindow_PrintTimeDuration(HANPSTR pText, HANSIZE nLen, PULARGE_INTEGER pTimeDuration);
+static void UpdateBoxInfoWindow_PrintFrameTime(HANPSTR pText, HANSIZE nLen, HANSIZE nTimeScale, HANSIZE nTime);
 static void UpdateBoxInfoWindow_SetTitle(PVIDEOMP4BOXTREE pBoxTree, HWND hListView);
 static void UpdateBoxInfoWindow_Default(PVIDEOMP4BOXTREE pBoxTree, HWND hListView);
 static void UpdateBoxInfoWindow_ftyp(PVIDEOMP4BOXTREE pBoxTree, HWND hListView, void* pParam);
@@ -192,7 +199,10 @@ static void DecodeBoxData_stsz(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stsz pstsz);
 static void DecodeBoxData_stco(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pstco);
 static void DecodeBoxData_co64(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pco64);
 
-static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame);
+static void DecodeMP4Init(PVIDEOMP4WNDEXTRA mp4Info);
+static BOOL DecodeMP4Video(PVIDEOMP4WNDEXTRA mp4Info);
+static PVIDEOMP4TRACK DecodeMP4GetTrack(PVIDEOMP4WNDEXTRA mp4Info, VIDEOMP4TRACKHANDLERTYPE trackType);
+static HANSIZE DecodeMP4TimeToSampleId(PVIDEOMP4TRACK pTrack, VIDEOPLAYTIME nTime);
 
 static const HANINT sg_pMP4BoxInfoHeaderWidth[VIDEO_MP4_BOX_INFO_HEADER_CNT] = {
     [VIDEO_MP4_BOX_INFO_HEADER_FIELD] = 150,
@@ -580,7 +590,10 @@ static LRESULT CreateCallback(HWND hVideoMP4, LPARAM lParam)
 
         InitMP4BoxTreeWindow(mp4Info);
         if (FALSE == MP4Process(mp4Info)) { lWndProcRet = -1; }
-        else { bDecodeRet = DecodeMP4(mp4Info, 0); }
+        else {
+            DecodeMP4Init(mp4Info);
+            bDecodeRet = DecodeMP4Video(mp4Info);
+        }
 
         (void)bDecodeRet;
     }
@@ -1039,6 +1052,7 @@ static void ReadMP4BoxCallback_Process(PCVIDEOMP4BOX pBox, void* pParam)
     switch (boxType) {
         case VIDEO_MP4_BOX_TYPE_trak: { (void)UpdateMP4Info_trakProcess(mp4Info); } break;
         case VIDEO_MP4_BOX_TYPE_tkhd: { (void)DecodeBoxData_tkhd(pBox, &(pTrack->tkhd)); } break;
+        case VIDEO_MP4_BOX_TYPE_mdhd: { DecodeBoxData_mdhd(pBox, &(pTrack->mdhd)); } break;
         case VIDEO_MP4_BOX_TYPE_hdlr: { DecodeBoxData_hdlr(pBox, &(pTrack->hdlr)); } break;
         case VIDEO_MP4_BOX_TYPE_stts: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->stts)); } break;
         case VIDEO_MP4_BOX_TYPE_ctts: { DecodeBoxData_stblSubBoxDefault(pBox, &(pTrack->ctts)); } break;
@@ -1549,6 +1563,17 @@ static void UpdateBoxInfoWindow_PrintTimeDuration(HANPSTR pText, HANSIZE nLen, P
     uint8_t nSecond = (uint8_t)(pTimeDuration->QuadPart % 60);
 
     HAN_snprintf(pText, nLen, TEXT("%u:%u:%u"), nHour, nMinute, nSecond);
+}
+static void UpdateBoxInfoWindow_PrintFrameTime(HANPSTR pText, HANSIZE nLen, HANSIZE nTimeScale, HANSIZE nTime)
+{
+    HANDOUBLE fTime = (HANDOUBLE)nTime / (HANDOUBLE)nTimeScale;
+    HANSIZE nHour = (HANSIZE)(fTime / 3600);
+    uint8_t nMin = ((HANSIZE)(fTime / 60)) % 60;
+    uint8_t nSec = ((HANSIZE)fTime) % 60;
+    uint16_t nMS = ((HANSIZE)(fTime * 1000)) % 1000;
+
+    HAN_snprintf(pText, nLen, TEXT(HANSIZE_PRINT_FORMAT "（" HANSIZE_PRINT_FORMAT ":%02u:%02u.%03u）"),
+        nTime, nHour, nMin, nSec, nMS);
 }
 static void UpdateBoxInfoWindow_SetTitle(PVIDEOMP4BOXTREE pBoxTree, HWND hListView)
 {
@@ -2286,7 +2311,7 @@ static void UpdateBoxInfoWindow_mdatSample(HANSIZE nTrackId, HANSIZE nSampleId, 
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_SAMPLE_SIZE), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->timeDTS);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_DTS), pText, nId, hListView);
-    HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->timePTS);
+    UpdateBoxInfoWindow_PrintFrameTime(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, pTrack->mdhd.timeDuration.nTimescale, pSample->timePTS);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_PTS), pText, nId, hListView);
     HAN_snprintf(pText, HAN_VIDEO_MP4_TEXT_BUF_SIZE, TEXT(HANSIZE_PRINT_FORMAT), pSample->timeDuration);
     nId = UpdateBoxInfoWindow_InsertLine(GetMP4_mdat_FieldName(VIDEO_MP4_mdat_BOX_FIELD_DURATION), pText, nId, hListView);
@@ -2547,28 +2572,68 @@ static void DecodeBoxData_co64(PCVIDEOMP4BOX pBox, PVIDEOMP4BOXINFO_stco64 pco64
 }
 
 #if 1 /* 解码 */
-static BOOL DecodeMP4(PVIDEOMP4WNDEXTRA mp4Info, HANSIZE nFrame)
+static void DecodeMP4Init(PVIDEOMP4WNDEXTRA mp4Info)
 {
-    BOOL bRet = TRUE;
-    const uint8_t* pData = mp4Info->paramVideo.pData;
-    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
     HANSIZE nTrackCnt = mp4Info->track.nCnt;
-    uint32_t nSampleSize;
-    HANSIZE nSampleOffset;
+    PVIDEOMP4TRACK pTrack = mp4Info->track.pList;
+    PVIDEOMP4TRACK* pMedia = mp4Info->track.pMedia;
+    VIDEOMP4TRACKHANDLERTYPE trackType;
+
+    memset(pMedia, 0, sizeof(mp4Info->track.pMedia));
 
     for (HANSIZE iLoop = 0; iLoop < nTrackCnt; iLoop++)
     {
-        if (VIDEO_MP4_TRACK_HANDLER_TYPE_VIDEO == pTrack[iLoop].hdlr.handlerType.eType)
+        trackType = pTrack[iLoop].hdlr.handlerType.eType;
+        if (NULL == pMedia[trackType]) { pMedia[trackType] = &pTrack[iLoop]; }
+    }
+
+    mp4Info->playTime.nPrev = HAN_VIDEO_MP4_INVALID_PLAY_TIME;
+    mp4Info->playTime.nCurr = 0;
+}
+static BOOL DecodeMP4Video(PVIDEOMP4WNDEXTRA mp4Info)
+{
+    BOOL bRet = TRUE;
+    const uint8_t* pData = mp4Info->paramVideo.pData;
+    PVIDEOMP4TRACK pTrack = DecodeMP4GetTrack(mp4Info, VIDEO_MP4_TRACK_HANDLER_TYPE_VIDEO);
+    VIDEOPLAYTIME nCurrTime = mp4Info->playTime.nCurr;
+    VIDEOPLAYTIME nPrevTime = mp4Info->playTime.nPrev;
+    HANSIZE nCurrSampleId = DecodeMP4TimeToSampleId(pTrack, nCurrTime);
+    HANSIZE nPrevSampleId = DecodeMP4TimeToSampleId(pTrack, nPrevTime);
+    HANSIZE nCurrChunkId = pTrack->pSample[nCurrSampleId].idChunk;
+    HANSIZE nPrevChunkId = pTrack->pSample[nPrevSampleId].idChunk;
+    uint32_t nSampleSize;
+    HANSIZE nSampleOffset;
+
+    if ((nPrevTime == HAN_VIDEO_MP4_INVALID_PLAY_TIME) || (nPrevChunkId != nCurrChunkId))
+    {
+        nSampleSize = pTrack->pSample[nCurrSampleId].nSize;
+        nSampleOffset = pTrack->pSample[nCurrSampleId].sOffset;
+
+        DecodeMedia(&pData[nSampleOffset], nSampleSize, pTrack->decoder.table.pType[0], pTrack->decoder.table.pTable[0]);
+    }
+
+    return bRet;
+}
+static PVIDEOMP4TRACK DecodeMP4GetTrack(PVIDEOMP4WNDEXTRA mp4Info, VIDEOMP4TRACKHANDLERTYPE trackType)
+{
+    return mp4Info->track.pMedia[trackType];
+}
+static HANSIZE DecodeMP4TimeToSampleId(PVIDEOMP4TRACK pTrack, VIDEOPLAYTIME nTime)
+{
+    HANSIZE nRet = 0;
+    uint32_t nTimescale = pTrack->mdhd.timeDuration.nTimescale;
+    VIDEOPLAYTIME nTrackTime = nTime * nTimescale / 1000000;
+
+    /* 暂定，死办法遍历一遍，后续可能用二分法之类的做优化，还要考虑时间精度对齐的问题 */
+    for (HANSIZE iLoop = 0; iLoop < pTrack->nSampleCnt; iLoop++)
+    {
+        if (nTrackTime == pTrack->pSample[iLoop].timePTS)
         {
-            nSampleSize = pTrack[iLoop].pSample[nFrame].nSize;
-            nSampleOffset = pTrack[iLoop].pSample[nFrame].sOffset;
-
-            DecodeMedia(&pData[nSampleOffset], nSampleSize, pTrack[iLoop].decoder.table.pType[0], pTrack[iLoop].decoder.table.pTable[0]);
-
+            nRet = iLoop;
             break;
         }
     }
 
-    return bRet;
+    return nRet;
 }
 #endif
